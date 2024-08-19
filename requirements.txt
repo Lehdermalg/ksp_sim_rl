@@ -1,6 +1,7 @@
 numpy
 gym
 tensorflow
+keras
 prettytable
 matplotlib
 google

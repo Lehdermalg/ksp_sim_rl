@@ -268,7 +268,7 @@ class SimpleKSPEnv(gym.Env):
 
         # weights for the rewards' importance
         # alt_rew_w = 3.0e-3
-        alt_rew_w = 1.0e+3
+        alt_rew_w = 1.0e+4
         # vel_rew_w = 1.0e-3
         vel_rew_w = 0.0
         # fuel_rew_w = 5.0e-5

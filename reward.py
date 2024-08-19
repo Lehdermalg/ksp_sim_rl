@@ -13,7 +13,7 @@ def rayleigh_pdf(x, offset, sigma):
 
 # Define the Rayleigh PDF function
 def rayleigh_heaviside_pdf(x, offset, sigma):
-    scale = 1.0e+2
+    scale = 1.0e+3
     base = 1.0e-2
     linear_part = base * np.where(x < offset, x / offset, 0.0)  # Linear growth below offset
     rayleigh_part = ((base + scale * ((x - offset) / sigma ** 2) * np.exp((-(x - offset) ** 2) / (2 * sigma ** 2))) *

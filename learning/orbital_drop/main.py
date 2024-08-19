@@ -28,9 +28,10 @@ if __name__ == "__main__":
     # Create the environment
     _t = 2000       # simulation time limit [s]
     _ht = 75.0e+3   # desired orbital altitude
-    _position_angle = np.random.rand() * 360.0
+    # _position_angle = np.random.rand() * 360.0
+    _position_angle = np.random.rand() * 5.0
     # initial altitude - relative to planet surface
-    _h0_rel = rotate_vector_by_angle(np.array([0.0e+0, 71.5e+3]), _position_angle)
+    _h0_rel = rotate_vector_by_angle(np.array([0.0e+0, 75.0e+3]), _position_angle)
     _v = 0.1        # at 60% of orbital velocity the ship needs approx 6s thrust to get to 100%
     _hard_coded_policy_test = False
 
@@ -48,16 +49,16 @@ if __name__ == "__main__":
     os.makedirs(graphs_folder, exist_ok=True)
 
     # Initialize the agent
-    _epsilon_start = 0.6
+    _epsilon_start = 0.4
     agent = QLearningAgentANN(
         env=ske,
-        learning_rate=0.001,
+        learning_rate=0.005,
         gamma=1.0-5e-5,            # Discount factor - high for long-term rewards
         # 1.0-5e-4 ==>  2.000 steps into the past =>  20.0 s
         # 1.0-5e-5 ==> 20.000 steps into the past => 200.0 s
         epsilon=_epsilon_start,    # High exploration to start with
-        epsilon_decay=1.0-1e-2,    # To be adjusted
-        min_epsilon=0.01           # Minimum exploration
+        epsilon_decay=1.0-5e-4,    # To be adjusted
+        min_epsilon=1e-3           # Minimum exploration
     )
 
     # Set up the checkpoint and the manager
@@ -79,9 +80,9 @@ if __name__ == "__main__":
     writer = tf.summary.create_file_writer(log_dir)  # Create a SummaryWriter
 
     # Trial to start this journey
-    restart_episode_number = 120
-    num_episodes = 250
-    epsilon_restart = 2
+    restart_episode_number = 20
+    num_episodes = 20
+    epsilon_restart = 5
     final_episode_number = num_episodes + restart_episode_number
     episode_rewards = []
 
@@ -93,10 +94,11 @@ if __name__ == "__main__":
             agent.epsilon = _epsilon_start
 
         # --- Randomize the initial altitude ---
-        altitude_variation = (np.random.rand() - 0.5) * 1.0e+3  # Random variation between -500m and +500m
+        altitude_variation = (np.random.rand() - 0.5) * 12.5e+3  # Random variation between -12.500m and +12.500m
         # altitude_variation = 141  # add 141m that the rocket will fall within the approx. 6s of thrust
         # absolute initial position
-        _position_angle = np.random.rand() * 360.0
+        # _position_angle = np.random.rand() * 360.0
+        _position_angle = np.random.rand() * 5.0  # maybe the 360 deg randomization is too much?
         initial_position_m = (np.linalg.norm(_h0_rel) + ske.planet.radius_m + altitude_variation) * normalize(_h0_rel)
         initial_position_m = rotate_vector_by_angle(initial_position_m, _position_angle)
         # initial altitude - relative to planet surface
@@ -131,7 +133,7 @@ if __name__ == "__main__":
             next_state, reward, done, info = ske.step(action)
             if not _hard_coded_policy_test:
                 if round(ske.t, 3) % 1 == 0:
-                    loss = agent.update(state, action, reward, next_state, done, step_s)
+                    loss = agent.update(state, action, reward, next_state, done)
 
             state = next_state
 
@@ -145,6 +147,8 @@ if __name__ == "__main__":
                         tf.summary.scalar('Episode Reward', ske.episode_rewards[-1], step=step_s)
                         tf.summary.scalar('Loss', loss.numpy(), step=step_s)  # Assuming you have a 'loss' variable
                         tf.summary.scalar('Epsilon', agent.epsilon, step=step_s)
+                        tf.summary.histogram('Q-Values Throttle', agent.q_values[:, 0], step=step_s)  # Log Q-values
+                        tf.summary.histogram('Q-Values Angle', agent.q_values[:, 1], step=step_s)  # Log Q-values
 
             if round(ske.t, 3) % 1 == 0:
 
@@ -208,7 +212,7 @@ if __name__ == "__main__":
 
             if done:
                 logging.info(f".. STOPPING ..")
-                loss = agent.update(state, action, reward, next_state, done, step_s)
+                loss = agent.update(state, action, reward, next_state, done)
                 break
 
         # --- Generate and save the plot ---
