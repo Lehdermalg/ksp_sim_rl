@@ -57,7 +57,7 @@ if __name__ == "__main__":
         # 1.0-5e-4 ==>  2.000 steps into the past =>  20.0 s
         # 1.0-5e-5 ==> 20.000 steps into the past => 200.0 s
         epsilon=_epsilon_start,    # High exploration to start with
-        epsilon_decay=1.0-5e-4,    # To be adjusted
+        epsilon_decay=1.0-8e-4,    # To be adjusted
         min_epsilon=1e-3           # Minimum exploration
     )
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     writer = tf.summary.create_file_writer(log_dir)  # Create a SummaryWriter
 
     # Trial to start this journey
-    restart_episode_number = 20
+    restart_episode_number = 0
     num_episodes = 20
     epsilon_restart = 5
     final_episode_number = num_episodes + restart_episode_number

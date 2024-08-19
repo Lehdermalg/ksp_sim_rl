@@ -35,12 +35,31 @@ class QLearningAgentANN(object):
         self.optimizer = optimizers.Adam(learning_rate=self.learning_rate)
 
     def _build_q_network(self):
+        return self._build_q_network__128_128__001_01__02_02()
+
+    def _build_q_network__64_64__001_001__02_02(self):
         """Creates the neural network for Q-value approximation."""
+        """Good first two runs ... then collapses into 180deg trap"""
         model = keras.Sequential([
             layers.Input(shape=self.env.observation_space.shape),
             layers.Dense(64, activation='relu', kernel_regularizer=regularizers.l2(0.01)),
             layers.Dropout(0.2),  # Add a dropout layer after the dense layer
             layers.Dense(64, activation='relu', kernel_regularizer=regularizers.l2(0.01)),
+            layers.Dropout(0.2),  # Add a dropout layer after the dense layer
+            # Output: Q-values for each action
+            # Sigmoid to correctly map to the action space
+            layers.Dense(self.env.action_space.shape[0], activation='sigmoid')
+        ])
+        logging.info(f"Action space shape: {self.env.action_space.shape[0]}")
+        return model
+
+    def _build_q_network__128_128__001_01__02_02(self):
+        """Creates the neural network for Q-value approximation."""
+        model = keras.Sequential([
+            layers.Input(shape=self.env.observation_space.shape),
+            layers.Dense(128, activation='relu', kernel_regularizer=regularizers.l2(0.01)),
+            layers.Dropout(0.2),  # Add a dropout layer after the dense layer
+            layers.Dense(128, activation='relu', kernel_regularizer=regularizers.l2(0.1)),
             layers.Dropout(0.2),  # Add a dropout layer after the dense layer
             # Output: Q-values for each action
             # Sigmoid to correctly map to the action space
