@@ -133,17 +133,29 @@ def plot_episode_data(
     ax_radial_pos = fig.add_subplot(gs[0, 0])
     ax_radial_pos.plot(time, [(x[0] - offset_pos) * scale_pos for x in position], "b-",
                        label=f"Radial Position (m) x {scale_pos}")
-    ax_radial_pos.set_ylabel("Radial (scaled)")
+    ax_radial_pos.set_ylabel("Radial")
+    ax_radial_pos.set_ylim(65000, 85000)  # Set y-axis limits for radial position
+    ax_radial_pos.set_yticks([_ for _ in range(65000, 90000, 5000)])  # Set y-axis ticks
+    ax_radial_pos.grid(axis='y')
+    ax_radial_pos.minorticks_on()
     ax_radial_pos.legend()
 
     ax_radial_vel = fig.add_subplot(gs[1, 0])
     ax_radial_vel.plot(time, [v[0] * scale_vel for v in velocity], "g-",
                        label=f"Radial Velocity (m/s) x {scale_vel}")
+    ax_radial_vel.set_ylim(-600, 600)  # Set y-axis limits for radial velocity
+    ax_radial_vel.set_yticks([_ for _ in range(-600, 800, 200)])  # Set y-axis ticks
+    ax_radial_vel.grid(axis='y')
+    ax_radial_vel.minorticks_on()
     ax_radial_vel.legend()
 
     ax_radial_acc = fig.add_subplot(gs[2, 0])
     ax_radial_acc.plot(time, [a[0] * scale_acc for a in acceleration], "r-",
                        label=f"Radial Acceleration (m/s²) x {scale_acc}")
+    ax_radial_acc.set_ylim(-30, 30)  # Set y-axis limits for radial acceleration
+    ax_radial_acc.set_yticks([_ for _ in range(-30, 40, 10)])  # Set y-axis ticks
+    ax_radial_acc.grid(axis='y')
+    ax_radial_acc.minorticks_on()
     ax_radial_acc.legend()
 
     # --- Angular Component ---
@@ -151,16 +163,28 @@ def plot_episode_data(
     ax_angular_pos.plot(time, [x[1] * scale_pos for x in position], "b-",
                         label="Angular Position (deg)")
     ax_angular_pos.set_ylabel("Angular")
+    ax_angular_pos.set_ylim(0, 360)  # Set y-axis limits for angular position
+    ax_angular_pos.set_yticks([_ for _ in range(0, 405, 45)])  # Set y-axis ticks
+    ax_angular_pos.grid(axis='y')
+    ax_angular_pos.minorticks_on()
     ax_angular_pos.legend()
 
     ax_angular_vel = fig.add_subplot(gs[1, 1])
     ax_angular_vel.plot(time, [v[1] * scale_vel for v in velocity], "g-",
                         label="Angular Velocity (m/s)")
+    ax_angular_vel.set_ylim(-2500, 2500)  # Set y-axis limits for angular velocity
+    ax_angular_vel.set_yticks([_ for _ in range(-2500, 3500, 1000)])  # Set y-axis ticks
+    ax_angular_vel.grid(axis='y')
+    ax_angular_vel.minorticks_on()
     ax_angular_vel.legend()
 
     ax_angular_acc = fig.add_subplot(gs[2, 1])
     ax_angular_acc.plot(time, [a[1] * scale_acc for a in acceleration], "r-",
                         label="Angular Acceleration (m/s²)")
+    ax_angular_acc.set_ylim(-30, 30)  # Set y-axis limits for angular velocity
+    ax_angular_acc.set_yticks([_ for _ in range(-30, 40, 10)])  # Set y-axis ticks
+    ax_angular_acc.grid(axis='y')
+    ax_angular_acc.minorticks_on()
     ax_angular_acc.legend()
 
     # get every n-th item of rewards data
@@ -180,6 +204,10 @@ def plot_episode_data(
     # ax_rewards.plot(time, cumulative_rewards[::nth], label="Cumulative Reward")
     ax_throttle.set_ylabel("Throttle angle")
     ax_throttle.set_xlabel("Time (s)")
+    ax_throttle.set_ylim(0, 360)  # Set y-axis limits for angular position
+    ax_throttle.set_yticks([_ for _ in range(0, 405, 45)])  # Set y-axis ticks
+    ax_throttle.grid(axis='y')
+    ax_throttle.minorticks_on()
     ax_throttle.legend()
 
     # Save the image

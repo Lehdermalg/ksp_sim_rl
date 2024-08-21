@@ -52,12 +52,15 @@ if __name__ == "__main__":
     _epsilon_start = 0.4
     agent = QLearningAgentANN(
         env=ske,
-        learning_rate=0.005,
-        gamma=1.0-5e-5,            # Discount factor - high for long-term rewards
-        # 1.0-5e-4 ==>  2.000 steps into the past =>  20.0 s
-        # 1.0-5e-5 ==> 20.000 steps into the past => 200.0 s
+        learning_rate=0.01,
+        gamma=1.0-5e-2,            # Discount factor - high for long-term rewards
+        # 1.0-5e-1 ==>      2 steps into the past =>    2.0  s
+        # 1.0-5e-2 ==>     20 steps into the past =>   20.0  s
+        # 1.0-5e-3 ==>    200 steps into the past =>  200.0  s
+        # 1.0-5e-4 ==>  2.000 steps into the past => 2000.0  s
+        # 1.0-5e-5 ==> 20.000 steps into the past =>   20.0 ks
         epsilon=_epsilon_start,    # High exploration to start with
-        epsilon_decay=1.0-8e-4,    # To be adjusted
+        epsilon_decay=1.0-1e-2,    # To be adjusted
         min_epsilon=1e-3           # Minimum exploration
     )
 
@@ -80,7 +83,7 @@ if __name__ == "__main__":
     writer = tf.summary.create_file_writer(log_dir)  # Create a SummaryWriter
 
     # Trial to start this journey
-    restart_episode_number = 0
+    restart_episode_number = 20
     num_episodes = 20
     epsilon_restart = 5
     final_episode_number = num_episodes + restart_episode_number
@@ -147,6 +150,8 @@ if __name__ == "__main__":
                         tf.summary.scalar('Episode Reward', ske.episode_rewards[-1], step=step_s)
                         tf.summary.scalar('Loss', loss.numpy(), step=step_s)  # Assuming you have a 'loss' variable
                         tf.summary.scalar('Epsilon', agent.epsilon, step=step_s)
+                        tf.summary.scalar('Throttle', action[0], step=step_s)
+                        tf.summary.scalar('Thrust Angle', action[1], step=step_s)
                         tf.summary.histogram('Q-Values Throttle', agent.q_values[:, 0], step=step_s)  # Log Q-values
                         tf.summary.histogram('Q-Values Angle', agent.q_values[:, 1], step=step_s)  # Log Q-values
 
@@ -187,7 +192,7 @@ if __name__ == "__main__":
                 rocket_position_r_fi.append(ske.ship.position_r_fi_m)
                 rocket_velocity_r_fi.append(ske.ship.velocity_r_fi_mps)
                 rocket_acceleration_r_fi.append(ske.ship.acceleration_r_fi_mps2)
-                rocket_throttle_fi.append(np.rad2deg(action[1]))
+                rocket_throttle_fi.append(ske.ship.thrust_angle)
                 # print(f"DEBUG: {rocket_trajectory_x}, {rocket_trajectory_y}")
                 # --- Generate and save the plot ---
                 fig, ax = visualize_rocket_flight(

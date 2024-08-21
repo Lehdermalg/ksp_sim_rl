@@ -5,6 +5,7 @@ from copy import deepcopy
 
 from planet import Planets, Planet
 from rocket import Rockets, Rocket
+from agents import THROTTLE_ACTIONS, ANGLE_ACTIONS
 
 
 class SimpleKSPEnv(gym.Env):
@@ -26,10 +27,11 @@ class SimpleKSPEnv(gym.Env):
     ship, planet = None, None  # To be used for calculations
     dec = 6
     wid = 9
-    _alt_max = 250.0e+3         # Altitude limiting the trajectory for 0-1 scaling
+    _alt_max = 90.0e+3         # Altitude limiting the trajectory for 0-1 scaling
     _fi_max = 360               # Angle limiting the trajectory for 0-1 scaling
     _v_max = 4.0e+3             # Velocity limiting the trajectory for 0-1 scaling
-    _a_max = 3e+2               # Acceleration limiting the trajectory for 0-1 scaling
+    _a_max = 5e+1               # Acceleration limiting the trajectory for 0-1 scaling
+    _dv_max = 10.0e+3             # delta V limiting the observation space for 0-1 scaling
 
     def __init__(
             self,
@@ -51,20 +53,10 @@ class SimpleKSPEnv(gym.Env):
         # This will be needed here as some of the observation space is relative to the actors (planet and rocket)
         self.reset()
 
-        # 1. Define action and observation spaces:
-        self.action_space = spaces.Box(
-            low=np.array([
-                # - Throttle (continuous 0.0 to 100.0)
-                0.0,
-                # - Thrust Angle (continuous -pi to pi)
-                -np.pi  # TODO: The thrust angle should ideally be limited to -3°..3° relative to rocket direction
-            ]),
-            high=np.array([
-                100.0,
-                np.pi
-            ]),
-            dtype=np.float32
-        )
+        # Define the number of discrete actions
+        self.n_throttle_actions = len(THROTTLE_ACTIONS)
+        self.n_angle_actions = len(ANGLE_ACTIONS)
+        self.action_space = spaces.Discrete(self.n_throttle_actions * self.n_angle_actions)
 
         # observation space should be the rocket and flight parameters ... I am a dumb fool :D :D :D
         """ The NEW observation space (uncommented)
@@ -92,29 +84,33 @@ class SimpleKSPEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=np.array([
                 0.0,  # R [m] (radial distance)
-                -np.pi,  # φ [°] (angle)
-                -10e+3,  # Vr [m/s] (radial velocity)
-                -10e+3,  # Vφ [m/s] (angular velocity)
-                -1e+3,  # Ar [m/s²] (radial acceleration)
-                -1e+3,  # Aφ [m/s²] (angular acceleration)
-                -1e+6,  # Ra [m] (apoapsis)
-                -1e+6,  # Rp [m] (periapsis)
-                -1e+4,  # ad(v).X [m/s²] (air drag acceleration)
+                -0.5,  # φ [°] (angle)
+                0.0,   # Throttle
+                -1.0,   # Thrust angle
+                -1.0,  # Vr [m/s] (radial velocity)
+                -1.0,  # Vφ [m/s] (angular velocity)
+                -1.0,  # Ar [m/s²] (radial acceleration)
+                -1.0,  # Aφ [m/s²] (angular acceleration)
+                -1.0,  # Ra [m] (apoapsis)
+                -1.0,  # Rp [m] (periapsis)
+                -1.0,  # ad(v).X [m/s²] (air drag acceleration 0-1 scaled between -50m/s²..0m/s²)
                 0.0,  # Fuel [u]
                 0.0,  # dV [m/s]
             ]),
             high=np.array([
-                1.0e+7,  # R [m] (radial distance)
-                np.pi,  # φ [°] (angle)
-                10e+3,  # Vr [m/s] (radial velocity)
-                10e+3,  # Vφ [m/s] (angular velocity)
-                1e+3,  # Ar [m/s²] (radial acceleration)
-                1e+3,  # Aφ [m/s²] (angular acceleration)
-                1e+6,  # Ra [m] (apoapsis)
-                1e+6,  # Rp [m] (periapsis)
+                1.0,  # R [m] (radial distance 0-1 scaled up to 90km)
+                0.5,  # φ [°] (angle 0-1 scaled between -180..180°)
+                1.0,  # Throttle [ ] (% 0-1 scaled)
+                1.0,  # Thrust angle [°] (angle 0-1 scaled between -180..180°)
+                1.0,  # Vr [m/s] (radial velocity 0-1 scaled between -4km/s..+4km/s)
+                1.0,  # Vφ [m/s] (angular velocity 0-1 scaled between -4km/s..+4km/s)
+                1.0,  # Ar [m/s²] (radial acceleration 0-1 scaled between -50m/s²..+50m/s²)
+                1.0,  # Aφ [m/s²] (angular acceleration 0-1 scaled between -50m/s²..+50m/s²)
+                1.0,  # Ra [m] (apoapsis 0-1 scaled between -1.3kkm..+1.3kkm)
+                1.0,  # Rp [m] (periapsis 0-1 scaled between -1.3kkm..+1.3kkm)
                 0.0,  # ad(v).X [m/s²] (air drag acceleration)
-                1e+6,  # Fuel [u]
-                1e+5,  # dV [m/s]
+                1.0,  # Fuel [u]
+                1.0,  # dV [m/s] (delta V 0-1 scaled between 0m/s..+10km(s)
             ]),
             dtype=np.float32
         )
@@ -193,10 +189,15 @@ class SimpleKSPEnv(gym.Env):
 
         """Extract and return observation from the environment state."""
         obs = np.array([
-            # R [m] (radial distance) - calculated from kerbin surface up to 250km scaled down to 0-1 range
+            # R [m] (radial distance) - calculated from kerbin surface up to 90km scaled down to 0-1 range
             # φ [°] (angle)
-            (self._alt_max - (self.ship.position_r_fi_m[0] - self.planet.radius_m)) / self._alt_max,
+            (self.ship.position_r_fi_m[0] - self.planet.radius_m) / self._alt_max,
             self.ship.position_r_fi_m[1] / self._fi_max,
+            # Throttle [ ] (% 0-1 scaled)
+            # Thrust angle [°] (angle 0-1 scaled between -180..180°)
+            self.ship.throttle / 100.0,
+            self.ship.thrust_angle / self._fi_max,
+
             # Vr [m/s] (radial velocity)
             # Vφ [m/s] (angular velocity)
             # This might be incorrect
@@ -216,7 +217,7 @@ class SimpleKSPEnv(gym.Env):
             # Fuel [u]
             (self.ship.total_lf_u + self.ship.total_ox_u) / self.ship.initial_fuel_mass_kg,
             # dV [m/s]
-            self.ship.dv_remaining_mps(planet=self.planet) / self.ship.initial_dV_mps
+            self.ship.dv_remaining_mps(planet=self.planet) / self._dv_max
         ], dtype=np.float32)
         # print(obs)
         return obs
@@ -227,13 +228,13 @@ class SimpleKSPEnv(gym.Env):
             print("Evaluation terminated!")
             return None, None, self.done, {}
 
-        throttle, thrust_angle = action
+        throttle_delta, thrust_angle_delta = action
 
         # Apply action:
-        self.ship.throttle = float(throttle)
+        self.ship.throttle += float(throttle_delta)
         # this was an early attempt to get rid of the agent smashing the rocket against the ground
         # self.ship.thrust_angle = thrust_angle + np.deg2rad(180.0)
-        self.ship.thrust_angle = thrust_angle
+        self.ship.thrust_angle += thrust_angle_delta
         # print(f"Action: Throttle={throttle:3f}, Thrust Angle={np.rad2deg(thrust_angle):3f} degrees")
 
         # Simulate one time step:
@@ -268,7 +269,7 @@ class SimpleKSPEnv(gym.Env):
 
         # weights for the rewards' importance
         # alt_rew_w = 3.0e-3
-        alt_rew_w = 1.0e+4
+        alt_rew_w = 1.0e+2
         # vel_rew_w = 1.0e-3
         vel_rew_w = 0.0
         # fuel_rew_w = 5.0e-5
@@ -295,7 +296,9 @@ class SimpleKSPEnv(gym.Env):
 
         # crashing is really hyper ultra super bad
         # crash_punishment = round(-2.5e+5, self.dec)
-        crash_punishment = round(-8.0e+6, self.dec)
+        # crash_punishment = round(-2.0e+6, self.dec)  # 200 steps * 1000 reward
+        crash_punishment = round(-2.0e+4, self.dec)  # 200 steps * 1000 reward
+        # crash_punishment = round(-2.0e+6, self.dec)  # 200s * 100 steps/s * 1000 reward * 1/10
         # crash_punishment = penalty_function(self.last_epoch_mean_rewards)
         if self.ship.crashed:
             self.step_reward += crash_punishment

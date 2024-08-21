@@ -348,15 +348,35 @@ class Rocket(object):
         # Take care of out-of-bound values
         if v < 0.0:
             v = 0.0
-            logging.warning(f"Clipping throttle to {v}!")
+            # logging.warning(f"Clipping throttle to {v}!")
         if v > 100.0:
             v = 100.0
-            logging.warning(f"Clipping throttle to {v}!")
+            # logging.warning(f"Clipping throttle to {v}!")
 
         # Save data and pass it on to engines.
         self._throttle = v
         for e in self.engine_list:
             e.throttle = v
+
+    @property
+    def thrust_angle(self) -> float:
+        """Gets the ships thrust angle"""
+        return self._thrust_angle
+
+    @thrust_angle.setter
+    def thrust_angle(self, v: float) -> None:
+        """Sets the ships thrust angle between 0.0° .. 360°"""
+        # Take care of wrong data types.
+        if not isinstance(v, float):
+            raise TypeError(f"Thrust angle value must be a float: {v}")
+
+        # Take care of out-of-bound values
+        if v < 0.0 or v > 360.0:
+            v = v % 360.0
+            logging.warning(f"Removing redundant thrust angle {v}!")
+
+        # Save data and pass it on to engines.
+        self._thrust_angle = v
 
     @property
     def engines_operational(self) -> bool:
@@ -384,7 +404,7 @@ class Rocket(object):
             return
 
         # self.acceleration_mps2 += rocket_thrust / rocket_mass
-        _fi = self.thrust_angle
+        _fi = np.deg2rad(self.thrust_angle)
         rot = np.array([[cos(_fi), -sin(_fi)],
                         [sin(_fi),  cos(_fi)]])
         # print(f"fi = {_fi}\nrot matrix = {rot}")
