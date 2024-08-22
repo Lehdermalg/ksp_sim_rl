@@ -19,13 +19,15 @@ class QLearningAgentANN(object):
     def __init__(
             self,
             env,
+            writer,
             learning_rate=0.001,
             gamma=0.99,
             epsilon=1.0,
             epsilon_decay=0.995,
-            min_epsilon=0.01
+            min_epsilon=0.01,
     ):
         self.env = env
+        self.writer = writer
         self.learning_rate = learning_rate
         self.gamma = gamma
         self.epsilon = epsilon
@@ -34,15 +36,13 @@ class QLearningAgentANN(object):
         self.q_values = None
 
         # Build the neural network (you can customize the architecture)
-        """Good first 2 runs ... then collapses into 180deg trap (1-5e-5 gamma)"""
-        """Good first 3 run ... then collapses into 180deg trap (1-5e-1 gamma)"""
-        self.q_network = self._build_q_network(64,0.01,0.2, 64, 0.01, 0.2)
-        """Good first 1 run ... then collapses into 180deg trap (1-5e-1 gamma)"""
+        # self.q_network = self._build_q_network(64, 0.01, 0.2, 64, 0.01, 0.2)
         # self.q_network = self._build_q_network(64,0.05,0.2, 64, 0.05, 0.2)
-        """Good first 10 runs ... then collapses into 180deg trap (1-5e-1 gamma)"""
-        # self.q_network = self._build_q_network(128,0.01,0.2, 64, 0.01, 0.2)
+        self.q_network = self._build_q_network(128,0.01,0.2, 64, 0.01, 0.2)
         # self.q_network = self._build_q_network(128,0.01,0.2, 128, 0.01, 0.2)
         self.optimizer = optimizers.Adam(learning_rate=self.learning_rate)
+
+        self.q_network.predict(np.zeros((1,) + self.env.observation_space.shape))
 
     def _build_q_network(self, neurons_1, regularization_1, dropout_1, neurons_2, regularization_2, dropout_2):
         """Creates the neural network for Q-value approximation."""
@@ -79,8 +79,10 @@ class QLearningAgentANN(object):
         # print(f"Throttle delta, thrust angle delta: {throttle_delta}, {thrust_angle_delta}")
         return [throttle_delta, thrust_angle_delta]
 
-    def update(self, state, action, reward, next_state, done):
+    def update(self, state, action, reward, next_state, done, step):
         """Updates the Q-network using a gradient descent step."""
+        from environment import OBSERVATION_NAMES
+
         with tf.GradientTape() as tape:
             self.q_values = self.q_network(state[np.newaxis, :])
             # print(f"action: {action}")
@@ -113,5 +115,21 @@ class QLearningAgentANN(object):
 
         # Epsilon decay
         self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
+
+        # --- Get weights from the first Dense layer ---
+        first_dense_layer = self.q_network.layers[0]
+        # print(f"weights: {first_dense_layer.get_weights()}")
+        weights = first_dense_layer.get_weights()[0]
+
+        # --- Calculate normalized sum of squared weights for each observation ---
+        squared_weights = np.square(weights)
+        sum_squared_weights = np.sum(squared_weights, axis=1)  # Sum along neuron axis
+        normalized_importance = sum_squared_weights / len(weights)  # Normalize
+
+        # --- Log normalized importance ---
+        with self.writer.as_default():
+            tf.summary.histogram('Observation Importance', normalized_importance, step=step)
+            for i, observation_name in enumerate(OBSERVATION_NAMES):
+                tf.summary.scalar(f'Importance_{observation_name}', normalized_importance[i], step=step)
 
         return loss

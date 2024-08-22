@@ -48,20 +48,25 @@ if __name__ == "__main__":
     # Create the graphs output folder if it doesn't exist
     os.makedirs(graphs_folder, exist_ok=True)
 
+    # --- Training Loop ---
+    writer = tf.summary.create_file_writer(log_dir)  # Create a SummaryWriter
+
     # Initialize the agent
-    _epsilon_start = 0.4
+    _epsilon_start = 0.7
     agent = QLearningAgentANN(
         env=ske,
         learning_rate=0.01,
-        gamma=1.0-5e-2,            # Discount factor - high for long-term rewards
-        # 1.0-5e-1 ==>      2 steps into the past =>    2.0  s
-        # 1.0-5e-2 ==>     20 steps into the past =>   20.0  s
-        # 1.0-5e-3 ==>    200 steps into the past =>  200.0  s
-        # 1.0-5e-4 ==>  2.000 steps into the past => 2000.0  s
-        # 1.0-5e-5 ==> 20.000 steps into the past =>   20.0 ks
+        gamma=1.0-5e-4,            # Discount factor - high for long-term rewards
+        # 1.0-5e-1 ==>       2 steps into the past =>    0.02  s
+        # 1.0-5e-2 ==>      20 steps into the past =>    0.20  s
+        # 1.0-5e-3 ==>     200 steps into the past =>    2.00  s
+        # 1.0-5e-4 ==>   2.000 steps into the past =>   20.00  s
+        # 1.0-5e-5 ==>  20.000 steps into the past =>  200.00  s
+        # 1.0-5e-6 ==> 200.000 steps into the past => 2000.00  s
         epsilon=_epsilon_start,    # High exploration to start with
         epsilon_decay=1.0-1e-2,    # To be adjusted
-        min_epsilon=1e-3           # Minimum exploration
+        min_epsilon=1e-3,           # Minimum exploration
+        writer=writer
     )
 
     # Set up the checkpoint and the manager
@@ -79,12 +84,9 @@ if __name__ == "__main__":
         checkpoint.restore(checkpoint_manager.latest_checkpoint)
         logging.info(f"Restored from {checkpoint_manager.latest_checkpoint}")
 
-    # --- Training Loop ---
-    writer = tf.summary.create_file_writer(log_dir)  # Create a SummaryWriter
-
     # Trial to start this journey
-    restart_episode_number = 20
-    num_episodes = 20
+    restart_episode_number = 100
+    num_episodes = 100
     epsilon_restart = 5
     final_episode_number = num_episodes + restart_episode_number
     episode_rewards = []
@@ -136,7 +138,7 @@ if __name__ == "__main__":
             next_state, reward, done, info = ske.step(action)
             if not _hard_coded_policy_test:
                 if round(ske.t, 3) % 1 == 0:
-                    loss = agent.update(state, action, reward, next_state, done)
+                    loss = agent.update(state, action, reward, next_state, done, step_s)
 
             state = next_state
 
@@ -217,7 +219,7 @@ if __name__ == "__main__":
 
             if done:
                 logging.info(f".. STOPPING ..")
-                loss = agent.update(state, action, reward, next_state, done)
+                loss = agent.update(state, action, reward, next_state, done, step_s)
                 break
 
         # --- Generate and save the plot ---

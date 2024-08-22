@@ -7,6 +7,22 @@ from planet import Planets, Planet
 from rocket import Rockets, Rocket
 from agents import THROTTLE_ACTIONS, ANGLE_ACTIONS
 
+OBSERVATION_NAMES = [
+    "radial position",
+    "angular position",
+    "throttle",
+    "thrust angle",
+    "radial velocity",
+    "angular velocity",
+    "radial acceleration",
+    "angular acceleration",
+    "apoapsis",
+    "periapsis",
+    "air drag acceleration",
+    "fuel",
+    "delta V"
+]
+
 
 class SimpleKSPEnv(gym.Env):
     """
@@ -61,6 +77,7 @@ class SimpleKSPEnv(gym.Env):
         # observation space should be the rocket and flight parameters ... I am a dumb fool :D :D :D
         """ The NEW observation space (uncommented)
         "R [m]", "φ [°]",
+        "Thr [%]", "Thr φ [°]"
         "Vr [m/s]", "Vφ [m/s]",
         "Ar [m/s²]", "Aφ [m/s²]",
         "Ra [m]", "Rp [m]",
@@ -114,25 +131,6 @@ class SimpleKSPEnv(gym.Env):
             ]),
             dtype=np.float32
         )
-        """
-        # The OLD observation space ...
-        self.observation_space = spaces.Box(
-            low=np.array([
-                # - Altitude (continuous)
-                self._planet.radius_m,  # for Kerbin => 600km
-                # - Angular Velocity (continuous)
-                -np.inf,  # TODO: Find a realistic value
-                # - Orbital Velocity (continuous)
-                -5000
-            ]),
-            high=np.array([
-                self._planet.radius_m + 5 * self._planet.altitude_cutoff_m,  # for Kerbin => 600km+350km
-                np.inf,  # TODO: Find a realistic value
-                5000
-            ]),
-            dtype=np.float32
-        )
-        """
 
     def set_target_altitude_m(self, altitude: float):
         """Sets the target altitude for the ship and the 'safe' copy"""
@@ -297,7 +295,7 @@ class SimpleKSPEnv(gym.Env):
         # crashing is really hyper ultra super bad
         # crash_punishment = round(-2.5e+5, self.dec)
         # crash_punishment = round(-2.0e+6, self.dec)  # 200 steps * 1000 reward
-        crash_punishment = round(-2.0e+4, self.dec)  # 200 steps * 1000 reward
+        crash_punishment = round(-8.0e+4, self.dec)  # 200 steps * 1000 reward
         # crash_punishment = round(-2.0e+6, self.dec)  # 200s * 100 steps/s * 1000 reward * 1/10
         # crash_punishment = penalty_function(self.last_epoch_mean_rewards)
         if self.ship.crashed:
