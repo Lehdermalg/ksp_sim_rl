@@ -56,7 +56,7 @@ if __name__ == "__main__":
     agent = QLearningAgentANN(
         env=ske,
         learning_rate=0.01,
-        gamma=1.0-5e-4,            # Discount factor - high for long-term rewards
+        gamma=1.0-5e-3,            # Discount factor - high for long-term rewards
         # 1.0-5e-1 ==>       2 steps into the past =>    0.02  s
         # 1.0-5e-2 ==>      20 steps into the past =>    0.20  s
         # 1.0-5e-3 ==>     200 steps into the past =>    2.00  s
@@ -85,8 +85,8 @@ if __name__ == "__main__":
         logging.info(f"Restored from {checkpoint_manager.latest_checkpoint}")
 
     # Trial to start this journey
-    restart_episode_number = 100
-    num_episodes = 100
+    restart_episode_number = 0
+    num_episodes = 500
     epsilon_restart = 5
     final_episode_number = num_episodes + restart_episode_number
     episode_rewards = []
@@ -220,6 +220,7 @@ if __name__ == "__main__":
             if done:
                 logging.info(f".. STOPPING ..")
                 loss = agent.update(state, action, reward, next_state, done, step_s)
+                ske.crash_punishment = -sum(ske.episode_rewards)
                 break
 
         # --- Generate and save the plot ---

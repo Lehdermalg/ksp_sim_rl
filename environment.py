@@ -74,6 +74,8 @@ class SimpleKSPEnv(gym.Env):
         self.n_angle_actions = len(ANGLE_ACTIONS)
         self.action_space = spaces.Discrete(self.n_throttle_actions * self.n_angle_actions)
 
+        self.crash_punishment = round(-2.0e+4, self.dec)  # 200 steps * 1000 reward
+
         # observation space should be the rocket and flight parameters ... I am a dumb fool :D :D :D
         """ The NEW observation space (uncommented)
         "R [m]", "φ [°]",
@@ -295,11 +297,10 @@ class SimpleKSPEnv(gym.Env):
         # crashing is really hyper ultra super bad
         # crash_punishment = round(-2.5e+5, self.dec)
         # crash_punishment = round(-2.0e+6, self.dec)  # 200 steps * 1000 reward
-        crash_punishment = round(-8.0e+4, self.dec)  # 200 steps * 1000 reward
         # crash_punishment = round(-2.0e+6, self.dec)  # 200s * 100 steps/s * 1000 reward * 1/10
         # crash_punishment = penalty_function(self.last_epoch_mean_rewards)
         if self.ship.crashed:
-            self.step_reward += crash_punishment
+            self.step_reward += self.crash_punishment
             # pass
         # print(f"time     and reward: "
         #       f"{round(self.t, self.dec):{self.wid}.{self.dec}f}\t"

@@ -38,7 +38,8 @@ class QLearningAgentANN(object):
         # Build the neural network (you can customize the architecture)
         # self.q_network = self._build_q_network(64, 0.01, 0.2, 64, 0.01, 0.2)
         # self.q_network = self._build_q_network(64,0.05,0.2, 64, 0.05, 0.2)
-        self.q_network = self._build_q_network(128,0.01,0.2, 64, 0.01, 0.2)
+        # self.q_network = self._build_q_network(128,0.01,0.2, 64, 0.01, 0.2)
+        self.q_network = self._build_q_network(512,0.01,0.2, 512, 0.01, 0.2)
         # self.q_network = self._build_q_network(128,0.01,0.2, 128, 0.01, 0.2)
         self.optimizer = optimizers.Adam(learning_rate=self.learning_rate)
 
