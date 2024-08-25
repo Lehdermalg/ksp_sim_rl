@@ -6,7 +6,7 @@ from datetime import datetime
 import numpy as np
 
 from environment import SimpleKSPEnv
-from agents import QLearningAgentANN
+from agents import QLearningAgentANNDouble
 from tables import reset_table, add_row
 from graphs import visualize_rocket_flight, plot_episode_data, graphs_folder
 from maths import normalize, rotate_vector_by_angle
@@ -53,10 +53,10 @@ if __name__ == "__main__":
 
     # Initialize the agent
     _epsilon_start = 0.7
-    agent = QLearningAgentANN(
+    agent = QLearningAgentANNDouble(
         env=ske,
         learning_rate=0.01,
-        gamma=1.0-5e-3,            # Discount factor - high for long-term rewards
+        gamma=1.0-5e-2,            # Discount factor - high for long-term rewards
         # 1.0-5e-1 ==>       2 steps into the past =>    0.02  s
         # 1.0-5e-2 ==>      20 steps into the past =>    0.20  s
         # 1.0-5e-3 ==>     200 steps into the past =>    2.00  s
@@ -70,24 +70,36 @@ if __name__ == "__main__":
     )
 
     # Set up the checkpoint and the manager
-    checkpoint = tf.train.Checkpoint(
-        optimizer=agent.optimizer,
-        model=agent.q_network
+    checkpoint_t = tf.train.Checkpoint(
+        optimizer=agent.optimizer_t,
+        model=agent.q_network_t
     )
-    checkpoint_manager = tf.train.CheckpointManager(
-        checkpoint,
+    checkpoint_a = tf.train.Checkpoint(
+        optimizer=agent.optimizer_a,
+        model=agent.q_network_a
+    )
+    checkpoint_manager_t = tf.train.CheckpointManager(
+        checkpoint_t,
+        directory=checkpoint_path,
+        max_to_keep=5
+    )
+    checkpoint_manager_a = tf.train.CheckpointManager(
+        checkpoint_a,
         directory=checkpoint_path,
         max_to_keep=5
     )
     # Restart from checkpoint if possible
-    if checkpoint_manager.latest_checkpoint:
-        checkpoint.restore(checkpoint_manager.latest_checkpoint)
-        logging.info(f"Restored from {checkpoint_manager.latest_checkpoint}")
+    if checkpoint_manager_t.latest_checkpoint:
+        checkpoint_t.restore(checkpoint_manager_t.latest_checkpoint)
+        logging.info(f"Restored from {checkpoint_manager_t.latest_checkpoint}")
+    if checkpoint_manager_a.latest_checkpoint:
+        checkpoint_a.restore(checkpoint_manager_a.latest_checkpoint)
+        logging.info(f"Restored from {checkpoint_manager_a.latest_checkpoint}")
 
     # Trial to start this journey
     restart_episode_number = 0
-    num_episodes = 500
-    epsilon_restart = 5
+    num_episodes = 30
+    epsilon_restart = 3
     final_episode_number = num_episodes + restart_episode_number
     episode_rewards = []
 
@@ -99,7 +111,10 @@ if __name__ == "__main__":
             agent.epsilon = _epsilon_start
 
         # --- Randomize the initial altitude ---
-        altitude_variation = (np.random.rand() - 0.5) * 12.5e+3  # Random variation between -12.500m and +12.500m
+        altitude_variation = (np.random.rand() - 0.5) * 0.5e+3  # Random variation between -0.250m and +0.250m
+        # altitude_variation = (np.random.rand() - 0.5) * 1.0e+3  # Random variation between -0.500m and +0.500m
+        # altitude_variation = (np.random.rand() - 0.5) * 2.0e+3  # Random variation between -1.000m and +1.000m
+        # altitude_variation = (np.random.rand() - 0.5) * 12.5e+3  # Random variation between -12.500m and +12.500m
         # altitude_variation = 141  # add 141m that the rocket will fall within the approx. 6s of thrust
         # absolute initial position
         # _position_angle = np.random.rand() * 360.0
@@ -138,7 +153,7 @@ if __name__ == "__main__":
             next_state, reward, done, info = ske.step(action)
             if not _hard_coded_policy_test:
                 if round(ske.t, 3) % 1 == 0:
-                    loss = agent.update(state, action, reward, next_state, done, step_s)
+                    loss, loss_t, loss_a = agent.update(state, action, reward, next_state, done, step_s)
 
             state = next_state
 
@@ -151,11 +166,13 @@ if __name__ == "__main__":
                     with writer.as_default():
                         tf.summary.scalar('Episode Reward', ske.episode_rewards[-1], step=step_s)
                         tf.summary.scalar('Loss', loss.numpy(), step=step_s)  # Assuming you have a 'loss' variable
+                        tf.summary.scalar('Loss T', loss_t.numpy(), step=step_s)  # Assuming you have a 'loss' variable
+                        tf.summary.scalar('Loss A', loss_a.numpy(), step=step_s)  # Assuming you have a 'loss' variable
                         tf.summary.scalar('Epsilon', agent.epsilon, step=step_s)
                         tf.summary.scalar('Throttle', action[0], step=step_s)
                         tf.summary.scalar('Thrust Angle', action[1], step=step_s)
-                        tf.summary.histogram('Q-Values Throttle', agent.q_values[:, 0], step=step_s)  # Log Q-values
-                        tf.summary.histogram('Q-Values Angle', agent.q_values[:, 1], step=step_s)  # Log Q-values
+                        tf.summary.histogram('Q-Values Throttle', agent.q_values_t[:, 0], step=step_s)  # Log Q-values
+                        tf.summary.histogram('Q-Values Angle', agent.q_values_a[:, 0], step=step_s)  # Log Q-values
 
             if round(ske.t, 3) % 1 == 0:
 
@@ -219,8 +236,8 @@ if __name__ == "__main__":
 
             if done:
                 logging.info(f".. STOPPING ..")
+                logging.info(f"Episode crash punishment: {ske.crash_punishment}")
                 loss = agent.update(state, action, reward, next_state, done, step_s)
-                ske.crash_punishment = -sum(ske.episode_rewards)
                 break
 
         # --- Generate and save the plot ---
@@ -251,7 +268,9 @@ if __name__ == "__main__":
         episode_rewards.append(total_reward)
         logging.info(f'Episode #{episode} reward: {total_reward}')
 
-        save_path = checkpoint_manager.save()
-        logging.info(f'Saving episode {episode} checkpoint at {save_path}')
+        save_path_t = checkpoint_manager_t.save()
+        save_path_a = checkpoint_manager_a.save()
+        logging.info(f'Saving episode {episode} checkpoint T at {save_path_t}')
+        logging.info(f'Saving episode {episode} checkpoint A at {save_path_a}')
 
     plt.show()  # It will block further plot execution!
