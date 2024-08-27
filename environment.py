@@ -5,7 +5,7 @@ from copy import deepcopy
 
 from planet import Planets, Planet
 from rocket import Rockets, Rocket
-from agents import THROTTLE_ACTIONS, ANGLE_ACTIONS
+from agents import THROTTLE_ACTIONS, ANGLE_ACTIONS, FlightReplayBuffer
 
 OBSERVATION_NAMES = [
     "radial position",
@@ -65,6 +65,8 @@ class SimpleKSPEnv(gym.Env):
         # Store info for resetting
         self._planet = planet
         self._ship = ship
+        # Create a replay buffer
+        self.flight_replay_buffer = FlightReplayBuffer(max_size=int(1.0e+4))  # Adjust max_size as needed
 
         # This will be needed here as some of the observation space is relative to the actors (planet and rocket)
         self.reset()
@@ -141,6 +143,12 @@ class SimpleKSPEnv(gym.Env):
         self.ship.target_alt_m = altitude
         print(f"Ship target altitude = {self.ship.target_alt_m}")
 
+    def set_target_velocity_mps(self, velocity: float):
+        """Sets the target altitude for the ship and the 'safe' copy"""
+        self._ship.target_velocity_mps = velocity
+        self.ship.target_velocity_mps = velocity
+        print(f"Ship target velocity = {self.ship.target_velocity_mps}")
+
     def set_initial_position_m(self, position: np.array):
         """Sets the initial position for the ship and the 'safe' copy"""
         self._ship.position_m = position
@@ -163,6 +171,7 @@ class SimpleKSPEnv(gym.Env):
         # self.planet = deepcopy(self._planet)
         self.planet = self._planet  # There really shouldn't be anything happening to the planet...
         self.ship = deepcopy(self._ship)
+        self.flight_replay_buffer.reset()
         # Reset the necessary ship parameters
         # TODO: add some exploration of the initial position space
         self.ship.position_m = position_m
@@ -263,13 +272,14 @@ class SimpleKSPEnv(gym.Env):
         """Define your reward function based on the environment state."""
         # Example: Reward for getting closer to target altitude
         from reward import rayleigh_heaviside_pdf
+        from maths import gaussian
         self.step_reward = 0.0
 
         # weights for the rewards' importance
         # alt_rew_w = 3.0e-3
         alt_rew_w = 1.0e+2
         # vel_rew_w = 1.0e-3
-        vel_rew_w = 0.0
+        vel_rew_w = 1.0e+1
         # fuel_rew_w = 5.0e-5
         fuel_rew_w = 0.0
         # time_reward = 1.0e-5
@@ -283,7 +293,10 @@ class SimpleKSPEnv(gym.Env):
         # print(f"altitude and reward: "
         #       f"{round(self.ship.current_alt_m, self.dec):{self.wid}.{self.dec}f}\t"
         #       f"{round(altitude_reward, self.dec):{self.wid}.{self.dec}f}")
-        velocity_reward = vel_rew_w * 0.0
+        velocity_reward = vel_rew_w * gaussian(
+            value=self.ship.velocity_r_fi_mps[1],
+            target_value=self.ship.target_velocity_mps,
+            std_dev=0.05 * self.ship.target_velocity_mps)
         _total_fuel_percentage = self.ship.total_fuel_mass_kg / self.ship.initial_fuel_mass_kg
         fuel_reward = fuel_rew_w * pow(self.ship.total_fuel_mass_kg / self.ship.initial_fuel_mass_kg, 2)
         # print(f"fuel     and reward: "
