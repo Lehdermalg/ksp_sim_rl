@@ -6,7 +6,7 @@ from datetime import datetime
 import numpy as np
 
 from environment import SimpleKSPEnv
-from agents import QLearningAgentANN
+from agents import QLearningAgentANN, FlightReplayBuffer, MultiReplayBuffer
 from tables import reset_table, add_row
 from graphs import visualize_rocket_flight, plot_episode_data, graphs_folder
 from maths import normalize, rotate_vector_by_angle
@@ -44,6 +44,7 @@ if __name__ == "__main__":
     orbital_velocity_mps = ske.planet.orbital_velocity_mps(altitude_m=ske.ship.target_alt_m)
     _v0 = rotate_vector_by_angle(normalize(_h0_rel), 90) * _v * orbital_velocity_mps
     ske.set_initial_velocity_mps(_v0)
+    ske.set_target_velocity_mps(orbital_velocity_mps)
 
     # Create the graphs output folder if it doesn't exist
     os.makedirs(graphs_folder, exist_ok=True)
@@ -55,8 +56,8 @@ if __name__ == "__main__":
     _epsilon_start = 0.7
     agent = QLearningAgentANN(
         env=ske,
-        learning_rate=0.01,
-        gamma=1.0-5e-2,            # Discount factor - high for long-term rewards
+        learning_rate=0.005,
+        gamma=1.0-1e-2,            # Discount factor - high for long-term rewards
         # 1.0-5e-1 ==>       2 steps into the past =>    0.02  s
         # 1.0-5e-2 ==>      20 steps into the past =>    0.20  s
         # 1.0-5e-3 ==>     200 steps into the past =>    2.00  s
@@ -85,11 +86,16 @@ if __name__ == "__main__":
         logging.info(f"Restored from {checkpoint_manager.latest_checkpoint}")
 
     # Trial to start this journey
-    restart_episode_number = 18
-    num_episodes = 102
+    restart_episode_number = 0
+    num_episodes = 150
     epsilon_restart = 3
+    flights_recorded = 3
+    flight_seconds_replayed = 10
     final_episode_number = num_episodes + restart_episode_number
     episode_rewards = []
+
+    # Create a replay buffer
+    multi_replay_buffer = MultiReplayBuffer(max_size=flights_recorded)  # Adjust max_size as needed
 
     action = np.array([0.0, 0.0])
 
@@ -99,10 +105,12 @@ if __name__ == "__main__":
             agent.epsilon = _epsilon_start
 
         # --- Randomize the initial altitude ---
-        altitude_variation = (np.random.rand() - 0.5) * 0.5e+3  # Random variation between -0.250m and +0.250m
-        # altitude_variation = (np.random.rand() - 0.5) * 1.0e+3  # Random variation between -0.500m and +0.500m
-        # altitude_variation = (np.random.rand() - 0.5) * 2.0e+3  # Random variation between -1.000m and +1.000m
-        # altitude_variation = (np.random.rand() - 0.5) * 12.5e+3  # Random variation between -12.500m and +12.500m
+        # altitude_variation = (np.random.rand() - 0.5) * 5.0e+2   # Random variation between -0.250m and +0.250m
+        # altitude_variation = (np.random.rand() - 0.5) * 1.0e+3   # Random variation between -0.500m  and +0.500m
+        # altitude_variation = (np.random.rand() - 0.5) * 2.0e+3   # Random variation between -1.000m  and +1.000m
+        # altitude_variation = (np.random.rand() - 0.5) * 5.0e+3   # Random variation between -2.500m  and +2.500m
+        altitude_variation = (np.random.rand() - 0.5) * 10.0e+3  # Random variation between -5.000m  and +5.000m
+        # altitude_variation = (np.random.rand() - 0.5) * 20.0e+3  # Random variation between -10.000m and +10.000m
         # altitude_variation = 141  # add 141m that the rocket will fall within the approx. 6s of thrust
         # absolute initial position
         # _position_angle = np.random.rand() * 360.0
@@ -145,6 +153,9 @@ if __name__ == "__main__":
 
             state = next_state
 
+            # Store experience in the replay buffer
+            ske.flight_replay_buffer.add((state, action, reward, next_state, done))
+
             # logging.info(f"Step: {step_s} Loss: {loss} Action: {action}")
             # logging.info(f"Action: {action}\nState: {state}")
 
@@ -153,12 +164,12 @@ if __name__ == "__main__":
                 if round(ske.t, 3) % 1 == 0:
                     with writer.as_default():
                         tf.summary.scalar('Episode Reward', ske.episode_rewards[-1], step=step_s)
-                        tf.summary.scalar('Loss', loss.numpy(), step=step_s)  # Assuming you have a 'loss' variable
+                        tf.summary.scalar('Episode Cumulative Reward', ske.cumulative_rewards[-1], step=step_s)
+                        tf.summary.scalar('Loss', loss, step=step_s)  # Assuming you have a 'loss' variable
                         tf.summary.scalar('Epsilon', agent.epsilon, step=step_s)
                         tf.summary.scalar('Throttle', action[0], step=step_s)
                         tf.summary.scalar('Thrust Angle', action[1], step=step_s)
-                        tf.summary.histogram('Q-Values Throttle', agent.q_values[:, 0], step=step_s)  # Log Q-values
-                        tf.summary.histogram('Q-Values Angle', agent.q_values[:, 1], step=step_s)  # Log Q-values
+                        # tf.summary.histogram('Q-Values', agent.q_values[:, 0], step=step_s)  # Log Q-values
 
             if round(ske.t, 3) % 1 == 0:
 
@@ -187,6 +198,7 @@ if __name__ == "__main__":
                     # f"LOSS: {ske.loss} "
                     f"velocity R [m/s]: {ske.ship.velocity_r_fi_mps[0]:8.1f} "
                     f"velocity φ [m/s]: {ske.ship.velocity_r_fi_mps[1]:8.1f} "
+                    f"loss: {loss}"
                 )
                 # Be kind to your final tables
                 add_row(results_table, ske)
@@ -224,6 +236,12 @@ if __name__ == "__main__":
                 logging.info(f".. STOPPING ..")
                 logging.info(f"Episode crash punishment: {ske.crash_punishment}")
                 loss = agent.update(state, action, reward, next_state, done, step_s)
+                ske.flight_replay_buffer.final_reward = ske.cumulative_rewards[-1]
+                if ske.flight_replay_buffer.final_reward > 0:
+                    logging.info(f"Adding new flight to buffer "
+                                 f"- size {len(multi_replay_buffer.flight_list)} "
+                                 f"- reward: {ske.flight_replay_buffer.final_reward}")
+                    multi_replay_buffer.add(ske.flight_replay_buffer)
                 break
 
         # --- Generate and save the plot ---
@@ -253,6 +271,19 @@ if __name__ == "__main__":
         total_reward = sum(ske.episode_rewards)
         episode_rewards.append(total_reward)
         logging.info(f'Episode #{episode} reward: {total_reward}')
+
+        # Sample a batch from the multi-flight replay buffer
+        batch = multi_replay_buffer.sample(batch_size=int(flight_seconds_replayed/ske.dt))
+        if len(batch) > 0:
+            states, actions, rewards, next_states, dones = zip(*batch)
+
+            # Prepare data for training
+            X = np.array(states)
+            # Convert actions to indices (assuming you have a way to map actions to indices)
+            y = agent.prepare_q_values_for_post_episode_fitting(batch)
+
+            # Perform a batch update using model.fit
+            agent.q_network.fit(X, y, epochs=1, verbose=0)  # Single epoch, no output
 
         save_path = checkpoint_manager.save()
         logging.info(f'Saving episode {episode} checkpoint at {save_path}')

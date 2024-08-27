@@ -18,33 +18,43 @@ from constants import *
 class Rocket(object):
     # from Planet import Planet
 
-    _throttle = 0.0
+    # Mass related
     total_mass_kg = 0.0
     initial_mass_kg = 0.0
     initial_fuel_mass_kg = 0.0
-    initial_dV_mps = 0.0
     total_fuel_mass_kg = 0.0
     total_dry_mass_kg = 0.0
+    # Fuel related
     total_lf_u = 0.0
     total_lf_consumed_u = 0.0
     total_lf_consumption_ups = 0.0
-    throttled_lf_consumption_u = 0.0
     total_ox_u = 0.0
     total_ox_consumed_u = 0.0
     total_ox_consumption_ups = 0.0
+    # Throttle related
+    _throttle = 0.0
+    throttled_lf_consumption_u = 0.0
     throttled_ox_consumption_u = 0.0
-    average_drag_coefficient = 0.0
-    total_cross_section_m2 = 0.0
-    current_experienced_gravity_mps2 = 0.0
-    current_experienced_air_density = 0.0
-    current_experienced_air_drag_mps2 = 0.0
-    current_throttled_thrust_n = 0.0
-    current_throttled_twr_u = 0.0
-    current_total_thrust_n = 0.0
-    current_total_twr_u = 0.0
+    # Altitude and position related
     current_alt_m = 0.0
     target_alt_m = 0.0
     r_apo_peri = np.array([0.0, 0.0])
+    # Velocity related
+    initial_dV_mps = 0.0
+    target_velocity_mps = 0.0
+    # Air drag related
+    total_cross_section_m2 = 0.0
+    average_drag_coefficient = 0.0
+    current_experienced_air_density = 0.0
+    current_experienced_air_drag_mps2 = 0.0
+    # Acceleration related
+    current_experienced_gravity_mps2 = 0.0
+    # Thrust and TWR related
+    current_throttled_thrust_n = 0.0
+    current_total_thrust_n = 0.0
+    current_throttled_twr_u = 0.0
+    current_total_twr_u = 0.0
+    # Cylindrical related
     position_r_fi_m = np.array([0.0, 0.0])
     velocity_r_fi_mps = np.array([0.0, 0.0])
     acceleration_r_fi_mps2 = np.array([0.0, 0.0])

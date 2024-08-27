@@ -88,3 +88,19 @@ def rotate_vector_by_angle(v, deg):
     rotation_matrix = np.array([[np.cos(np.deg2rad(deg)), -np.sin(np.deg2rad(deg))],
                                 [np.sin(np.deg2rad(deg)),  np.cos(np.deg2rad(deg))]])
     return np.dot(rotation_matrix, v)
+
+
+def gaussian(value, target_value, std_dev):
+    """
+    Calculates a value based on a Gaussian distribution around a target value.
+
+    Args:
+        value: The current value.
+        target_value: The desired value.
+        std_dev: The standard deviation of the Gaussian distribution.
+
+    Returns:
+        The calculated reward.
+    """
+    reward = np.exp(-0.5 * ((value - target_value) / std_dev) ** 2)
+    return reward
