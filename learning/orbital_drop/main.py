@@ -56,7 +56,7 @@ if __name__ == "__main__":
     _epsilon_start = 0.7
     agent = QLearningAgentANN(
         env=ske,
-        learning_rate=0.01,
+        learning_rate=0.005,
         gamma=1.0-1e-2,            # Discount factor - high for long-term rewards
         # 1.0-5e-1 ==>       2 steps into the past =>    0.02  s
         # 1.0-5e-2 ==>      20 steps into the past =>    0.20  s
@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
     # Trial to start this journey
     restart_episode_number = 0
-    num_episodes = 15
+    num_episodes = 150
     epsilon_restart = 3
     flights_recorded = 3
     flight_seconds_replayed = 10
