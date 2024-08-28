@@ -6,13 +6,13 @@ from datetime import datetime
 import numpy as np
 
 from environment import SimpleKSPEnv
-from agents import QLearningAgentANN, MultiReplayBuffer, buffer_folder
+from agents import QLearningAgentANN, buffer_folder
 from tables import reset_table, add_row, tables_folder
 from graphs import visualize_rocket_flight, plot_episode_data, graphs_folder
 from maths import normalize, rotate_vector_by_angle
 
 current_folder = os.path.dirname(os.path.realpath(__file__))
-checkpoint_dir = "training_3/checkpoints"  # File name
+checkpoint_dir = "training/checkpoints"  # File name
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
 checkpoint_path = os.path.join(current_folder, os.path.dirname(checkpoint_dir))
 
@@ -57,11 +57,11 @@ if __name__ == "__main__":
     writer = tf.summary.create_file_writer(log_folder)  # Create a SummaryWriter
 
     # Initialize the agent
-    _epsilon_start = 0.7
+    _epsilon_start = 0.75
     agent = QLearningAgentANN(
         env=ske,
         learning_rate=0.1,
-        gamma=1.0-5e-3,            # Discount factor - high for long-term rewards
+        gamma=1.0-5e-1,            # Discount factor - high for long-term rewards
         # 1.0-5e-1 ==>       2 steps into the past =>    0.02  s
         # 1.0-5e-2 ==>      20 steps into the past =>    0.20  s
         # 1.0-5e-3 ==>     200 steps into the past =>    2.00  s
@@ -91,16 +91,19 @@ if __name__ == "__main__":
 
     # Trial to start this journey
     restart_episode_number = 0
-    num_episodes = 6
+    num_episodes = 10
     epsilon_restart = 5
-    flights_recorded = 3
-    flight_seconds_replayed = 10
+    flights_recorded = 5
+    flight_seconds_replayed = 5
+    large_epochs, small_epochs, batch_size = 10, 5, int(flight_seconds_replayed/ske.dt)
     final_episode_number = num_episodes + restart_episode_number
     episode_rewards = []
 
-    # Create a replay buffer
-    multi_replay_buffer = MultiReplayBuffer(max_size=flights_recorded)  # Adjust max_size as needed
+    # --- Pre-train the Agent ---
+    agent.load_experience_from_folder(replay_folder=buffer_folder)
+    agent.train_on_experience(large_epochs=large_epochs, small_epochs=small_epochs, batch_size=batch_size)
 
+    # --- Define a starting blank action ---
     action = np.array([0.0, 0.0])
 
     for episode in range(restart_episode_number, final_episode_number):
@@ -158,7 +161,7 @@ if __name__ == "__main__":
             state = next_state
 
             # Store experience in the replay buffer
-            ske.flight_replay_buffer.add((state, action, reward, next_state, done))
+            agent.flight_replay_buffer.add((state, action, reward, next_state, done))
 
             # logging.info(f"Step: {step_s} Loss: {loss} Action: {action}")
             # logging.info(f"Action: {action}\nState: {state}")
@@ -244,13 +247,13 @@ if __name__ == "__main__":
                 # --- Save the FlightBuffer to a file ---
                 buffer_filename = os.path.join(buffer_folder, f"episode_{episode:04d}_flight_buffer.json")
 
-                ske.flight_replay_buffer.final_reward = ske.cumulative_rewards[-1]
-                if ske.flight_replay_buffer.final_reward > 0:
-                    ske.flight_replay_buffer.save(buffer_filename)
+                agent.flight_replay_buffer.final_reward = ske.cumulative_rewards[-1]
+                if agent.flight_replay_buffer.final_reward > 0:
+                    agent.flight_replay_buffer.save(buffer_filename)
                     logging.info(f"Adding new flight to buffer "
-                                 f"- size {len(multi_replay_buffer.flight_list)} "
-                                 f"- reward: {ske.flight_replay_buffer.final_reward}")
-                    multi_replay_buffer.add(ske.flight_replay_buffer)
+                                 f"- size {len(agent.multi_replay_buffer.flight_list)} "
+                                 f"- reward: {agent.flight_replay_buffer.final_reward}")
+                    agent.multi_replay_buffer.add(agent.flight_replay_buffer)
                 break
 
         # --- Generate and save the plot ---
@@ -279,17 +282,17 @@ if __name__ == "__main__":
         logging.info(f'Episode #{episode} reward: {total_reward}')
 
         # Sample a batch from the multi-flight replay buffer
-        batch = multi_replay_buffer.sample(batch_size=int(flight_seconds_replayed/ske.dt))
+        batch = agent.multi_replay_buffer.sample(batch_size=int(flight_seconds_replayed/ske.dt))
         if len(batch) > 0:
             states, actions, rewards, next_states, dones = zip(*batch)
 
             # Prepare data for training
-            X = np.array(states)
+            x = np.array(states)
             # Convert actions to indices (assuming you have a way to map actions to indices)
             y = agent.prepare_q_values_for_post_episode_fitting(batch)
 
             # Perform a batch update using model.fit
-            agent.q_network.fit(X, y, epochs=1, verbose=0)  # Single epoch, no output
+            agent.q_network.fit(x, y, epochs=small_epochs, verbose=0)  # Single epoch, no output
 
         save_path = checkpoint_manager.save()
         logging.info(f'Saving episode {episode} checkpoint at {save_path}')

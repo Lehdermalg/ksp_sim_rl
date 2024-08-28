@@ -100,6 +100,8 @@ class QLearningAgentANN(object):
             epsilon=1.0,
             epsilon_decay=0.995,
             min_epsilon=0.01,
+            flights_recorded=5,
+            flight_steps_recorded=int(1.0e+4),
     ):
         self.env = env
         self.writer = writer
@@ -109,10 +111,16 @@ class QLearningAgentANN(object):
         self.epsilon_decay = epsilon_decay
         self.min_epsilon = min_epsilon
         self.q_values = None
+        self.flights_recorded = flights_recorded
+        self.flight_steps_recorded = flight_steps_recorded
+
+        # Create a SINGLE FLIGHT replay buffer
+        self.flight_replay_buffer = FlightReplayBuffer(max_size=self.flight_steps_recorded)  # Adjust max_size as needed
+
+        # Create a MULTI FLIGHT replay buffer
+        self.multi_replay_buffer = MultiReplayBuffer(max_size=self.flights_recorded)  # Adjust max_size as needed
 
         # Build the neural network (you can customize the architecture)
-        # self.q_network = self._build_q_network(64, 0.01, 0.2, 64, 0.01, 0.2)
-        # self.q_network = self._build_q_network(64,0.05,0.2, 64, 0.05, 0.2)
         self.q_network = self._build_q_network(network_dict={
             'dense_1': {'n': 256, 'a': 'relu', 'r': 0.01},
             'dropout_1': {'d': 0.2},
@@ -121,7 +129,6 @@ class QLearningAgentANN(object):
             'dense_3': {'n': 256, 'a': 'relu', 'r': 0.01},
             'dropout_3': {'d': 0.2},
         })
-        # self.q_network = self._build_q_network(128,0.01,0.2, 128, 0.01, 0.2)
         self.optimizer = optimizers.Adam(learning_rate=self.learning_rate)
         self.loss = losses.categorical_crossentropy
         self.metric = metrics.categorical_accuracy
@@ -263,6 +270,52 @@ class QLearningAgentANN(object):
         y = np.array(target_q_values)  # Target Q-values (2D array)
 
         return y
+
+    def save_or_drop_flight_buffer(self, final_reward, filename):
+        self.flight_replay_buffer.final_reward = final_reward
+        if self.flight_replay_buffer.final_reward > 0:
+            self.flight_replay_buffer.save(filename)
+            logging.info(f"Adding new flight to buffer "
+                         f"- size {len(self.multi_replay_buffer.flight_list)} "
+                         f"- reward: {self.flight_replay_buffer.final_reward}")
+            self.multi_replay_buffer.add(self.flight_replay_buffer)
+        self.flight_replay_buffer.reset()
+
+    def load_experience_from_folder(self, replay_folder):
+        import glob, os
+        # --- Load Experience Replay Files from a Folder ---
+        replay_filenames = glob.glob(os.path.join(replay_folder, "*.json"))  # Get all JSON files in the folder
+        if len(replay_filenames) > self.multi_replay_buffer.max_size:
+            logging.warning(f"Amount of flights available was {len(replay_filenames)} > "
+                            f"flight buffer size {self.multi_replay_buffer.max_size}. "
+                            f"Some flights will be dropped!")
+        for filename in replay_filenames:
+            self.flight_replay_buffer.reset()
+            self.flight_replay_buffer.load(filename)
+            self.multi_replay_buffer.add(self.flight_replay_buffer)
+
+    def train_on_experience(self, large_epochs: int, small_epochs: int, batch_size: int):
+        """Trains the agent on previously stored experience.
+            large_epochs: how many times the agent will get trained on batches of data
+            small_epochs: how many times the agent will get trained on a single batch sample
+            batch_size: how many samples to take from each batch
+        """
+        for epoch in range(large_epochs):
+            batch = self.multi_replay_buffer.sample(batch_size)
+            logging.info(f"Epoch {epoch + 1}/{large_epochs}")
+            if len(batch) > 0:
+                states, actions, rewards, next_states, dones = zip(*batch)
+
+                x = np.array(states)
+                y = self.prepare_q_values_for_post_episode_fitting(batch)
+
+                # Train for one epoch
+                history = self.q_network.fit(x, y, epochs=small_epochs, verbose=0)
+
+                # Log loss (if needed)
+                loss = history.history['loss'][0]
+                logging.info(f"Pre-training Epoch {epoch + 1}: Loss = {loss:.4f}")
+
 
 class QLearningAgentANNDouble(object):
     def __init__(

@@ -65,8 +65,6 @@ class SimpleKSPEnv(gym.Env):
         # Store info for resetting
         self._planet = planet
         self._ship = ship
-        # Create a replay buffer
-        self.flight_replay_buffer = FlightReplayBuffer(max_size=int(1.0e+4))  # Adjust max_size as needed
 
         # This will be needed here as some of the observation space is relative to the actors (planet and rocket)
         self.reset()
@@ -177,7 +175,6 @@ class SimpleKSPEnv(gym.Env):
         # self.planet = deepcopy(self._planet)
         self.planet = self._planet  # There really shouldn't be anything happening to the planet...
         self.ship = deepcopy(self._ship)
-        self.flight_replay_buffer.reset()
         # Reset the necessary ship parameters
         # TODO: add some exploration of the initial position space
         self.ship.position_m = position_m
@@ -319,7 +316,7 @@ class SimpleKSPEnv(gym.Env):
         # crash_punishment = penalty_function(self.last_epoch_mean_rewards)
         if self.ship.crashed:
             if self.crash_punishment is None:
-                self.crash_punishment = -1.1 * self.cumulative_rewards[-1]
+                self.crash_punishment = -0.9 * self.cumulative_rewards[-1]
             self.step_reward += self.crash_punishment
             # adapt the punishment for a new run
             self.crash_punishment = -1.1 * self.cumulative_rewards[-1]
