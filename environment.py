@@ -197,7 +197,7 @@ class SimpleKSPEnv(gym.Env):
         # Return the initial observation
         return self._get_observation()
 
-    def _get_observation(self):
+    def _get_observation(self) -> np.array:
         acc_d_mps2 = (-np.sign(self.ship.norm_velocity_mps) *
                       self.ship.current_experienced_air_drag_mps2)
 
@@ -236,7 +236,7 @@ class SimpleKSPEnv(gym.Env):
         # print(obs)
         return obs
 
-    def step(self, action: np.array) -> (np.array, float, bool, dict):
+    def step(self, action: np.array) -> (np.array, np.array, bool, dict):
         """Apply the action, update the environment, and return (obs, reward, done, info)."""
         if self.done:
             print("Evaluation terminated!")
@@ -275,7 +275,7 @@ class SimpleKSPEnv(gym.Env):
 
         return observation, reward, self.done, info
 
-    def _calculate_reward(self):
+    def _calculate_reward(self) -> float:
         """Define your reward function based on the environment state."""
         # Example: Reward for getting closer to target altitude
         from reward import rayleigh_heaviside_pdf

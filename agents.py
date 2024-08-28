@@ -35,7 +35,7 @@ class FlightReplayBuffer:
         data = {
             'max_size': self.max_size,
             'total_reward': self.final_reward,
-            'experiences': [(s, a, r, ns, d) for s, a, r, ns, d in self.buffer]
+            'experiences':  [(s.tolist(), a.tolist(), r, ns.tolist(), d) for s, a, r, ns, d in self.buffer]
         }
         with open(filename, 'w') as f:
             json.dump(data, f)
@@ -46,7 +46,7 @@ class FlightReplayBuffer:
             data = json.load(f)
         self.max_size = data['max_size']
         self.final_reward = data['total_reward']
-        self.buffer = [(s, a, r, ns, d) for s, a, r, ns, d in data['experiences']]
+        self.buffer = [(np.array(s), np.array(a), r, np.array(ns), d) for s, a, r, ns, d in data['experiences']]
 
 
 class MultiReplayBuffer:
@@ -175,7 +175,7 @@ class QLearningAgentANN(object):
         logging.info(f"Action space shape: {self.env.action_space}")
         return model
 
-    def choose_action(self, state):
+    def choose_action(self, state) -> np.array:
         """Chooses an action using an epsilon-greedy policy."""
         if np.random.rand() < self.epsilon:
             # Randomly choose throttle and angle actions
@@ -195,7 +195,7 @@ class QLearningAgentANN(object):
         thrust_angle_delta = ANGLE_ACTIONS[angle_idx] * self.env.dt
 
         # print(f"Throttle delta, thrust angle delta: {throttle_delta}, {thrust_angle_delta}")
-        return [throttle_delta, thrust_angle_delta]
+        return np.array([throttle_delta, thrust_angle_delta])
 
     def _calculate_target_q_value(self, state, action, reward, next_state, done):
         # Get Q-values for the current state

@@ -28,7 +28,7 @@ if __name__ == "__main__":
     # Create the environment
     _t = 2000       # simulation time limit [s]
     _ht = 75.0e+3   # desired orbital altitude
-    _h0 = 65.0e+3   # starting altitude
+    _h0 = 61.0e+3   # starting altitude
 
     # _position_angle = np.random.rand() * 360.0
     _position_angle = np.random.rand() * 5.0
@@ -109,10 +109,10 @@ if __name__ == "__main__":
             agent.epsilon = _epsilon_start
 
         # --- Randomize the initial altitude ---
-        # altitude_variation = (np.random.rand() - 0.5) * 5.0e+2   # Random variation between -0.250m and +0.250m
+        altitude_variation = (np.random.rand() - 0.5) * 5.0e+2   # Random variation between -0.250m and +0.250m
         # altitude_variation = (np.random.rand() - 0.5) * 1.0e+3   # Random variation between -0.500m  and +0.500m
         # altitude_variation = (np.random.rand() - 0.5) * 2.0e+3   # Random variation between -1.000m  and +1.000m
-        altitude_variation = (np.random.rand() - 0.5) * 5.0e+3   # Random variation between -2.500m  and +2.500m
+        # altitude_variation = (np.random.rand() - 0.5) * 5.0e+3   # Random variation between -2.500m  and +2.500m
         # altitude_variation = (np.random.rand() - 0.5) * 10.0e+3  # Random variation between -5.000m  and +5.000m
         # altitude_variation = (np.random.rand() - 0.5) * 20.0e+3  # Random variation between -10.000m and +10.000m
         # altitude_variation = 141  # add 141m that the rocket will fall within the approx. 6s of thrust
