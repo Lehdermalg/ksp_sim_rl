@@ -1,6 +1,8 @@
 import numpy as np
 from prettytable import PrettyTable
 
+tables_folder = "episode_tables"
+
 
 def reset_table():
     """Creates a PrettyTable to display results"""

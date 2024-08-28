@@ -185,6 +185,7 @@ class SimpleKSPEnv(gym.Env):
         self.ship.acceleration_mps2 = acceleration_mps2
         self.ship.initial_dV_mps = self.ship.dv_remaining_mps(self.planet)
         self.ship.calculate_properties(self.planet)
+        print(f"Ship t0 altitude: {self.ship.current_alt_m}")
 
         # Initialize/reset other environment state variables
         self.t = 0
@@ -285,7 +286,7 @@ class SimpleKSPEnv(gym.Env):
         # alt_rew_w = 3.0e-3
         alt_rew_w = 1.0e+2
         # vel_rew_w = 1.0e-3
-        vel_rew_w = 1.0e+1
+        vel_rew_w = 1.0e+2
         # fuel_rew_w = 5.0e-5
         fuel_rew_w = 0.0
         # time_reward = 1.0e-5

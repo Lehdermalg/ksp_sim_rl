@@ -6,18 +6,18 @@ from datetime import datetime
 import numpy as np
 
 from environment import SimpleKSPEnv
-from agents import QLearningAgentANN, FlightReplayBuffer, MultiReplayBuffer
-from tables import reset_table, add_row
+from agents import QLearningAgentANN, MultiReplayBuffer, buffer_folder
+from tables import reset_table, add_row, tables_folder
 from graphs import visualize_rocket_flight, plot_episode_data, graphs_folder
 from maths import normalize, rotate_vector_by_angle
 
 current_folder = os.path.dirname(os.path.realpath(__file__))
-checkpoint_dir = "training/checkpoints"  # File name
+checkpoint_dir = "training_3/checkpoints"  # File name
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
 checkpoint_path = os.path.join(current_folder, os.path.dirname(checkpoint_dir))
 
-log_dir = "training/logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+log_folder = "training/logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_folder, histogram_freq=1)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,10 +28,12 @@ if __name__ == "__main__":
     # Create the environment
     _t = 2000       # simulation time limit [s]
     _ht = 75.0e+3   # desired orbital altitude
+    _h0 = 65.0e+3   # starting altitude
+
     # _position_angle = np.random.rand() * 360.0
     _position_angle = np.random.rand() * 5.0
     # initial altitude - relative to planet surface
-    _h0_rel = rotate_vector_by_angle(np.array([0.0e+0, 75.0e+3]), _position_angle)
+    _h0_rel = rotate_vector_by_angle(np.array([0.0e+0, _h0]), _position_angle)
     _v = 0.1        # at 60% of orbital velocity the ship needs approx 6s thrust to get to 100%
     _hard_coded_policy_test = False
 
@@ -48,16 +50,18 @@ if __name__ == "__main__":
 
     # Create the graphs output folder if it doesn't exist
     os.makedirs(graphs_folder, exist_ok=True)
+    os.makedirs(buffer_folder, exist_ok=True)  # Create output folder if it doesn't exist
+    os.makedirs(tables_folder, exist_ok=True)  # Create output folder if it doesn't exist
 
     # --- Training Loop ---
-    writer = tf.summary.create_file_writer(log_dir)  # Create a SummaryWriter
+    writer = tf.summary.create_file_writer(log_folder)  # Create a SummaryWriter
 
     # Initialize the agent
     _epsilon_start = 0.7
     agent = QLearningAgentANN(
         env=ske,
-        learning_rate=0.005,
-        gamma=1.0-1e-2,            # Discount factor - high for long-term rewards
+        learning_rate=0.1,
+        gamma=1.0-5e-3,            # Discount factor - high for long-term rewards
         # 1.0-5e-1 ==>       2 steps into the past =>    0.02  s
         # 1.0-5e-2 ==>      20 steps into the past =>    0.20  s
         # 1.0-5e-3 ==>     200 steps into the past =>    2.00  s
@@ -65,8 +69,8 @@ if __name__ == "__main__":
         # 1.0-5e-5 ==>  20.000 steps into the past =>  200.00  s
         # 1.0-5e-6 ==> 200.000 steps into the past => 2000.00  s
         epsilon=_epsilon_start,    # High exploration to start with
-        epsilon_decay=1.0-1e-2,    # To be adjusted
-        min_epsilon=1e-3,           # Minimum exploration
+        epsilon_decay=1.0-1e-3,    # To be adjusted
+        min_epsilon=1e-1,           # Minimum exploration
         writer=writer
     )
 
@@ -87,8 +91,8 @@ if __name__ == "__main__":
 
     # Trial to start this journey
     restart_episode_number = 0
-    num_episodes = 150
-    epsilon_restart = 3
+    num_episodes = 6
+    epsilon_restart = 5
     flights_recorded = 3
     flight_seconds_replayed = 10
     final_episode_number = num_episodes + restart_episode_number
@@ -108,8 +112,8 @@ if __name__ == "__main__":
         # altitude_variation = (np.random.rand() - 0.5) * 5.0e+2   # Random variation between -0.250m and +0.250m
         # altitude_variation = (np.random.rand() - 0.5) * 1.0e+3   # Random variation between -0.500m  and +0.500m
         # altitude_variation = (np.random.rand() - 0.5) * 2.0e+3   # Random variation between -1.000m  and +1.000m
-        # altitude_variation = (np.random.rand() - 0.5) * 5.0e+3   # Random variation between -2.500m  and +2.500m
-        altitude_variation = (np.random.rand() - 0.5) * 10.0e+3  # Random variation between -5.000m  and +5.000m
+        altitude_variation = (np.random.rand() - 0.5) * 5.0e+3   # Random variation between -2.500m  and +2.500m
+        # altitude_variation = (np.random.rand() - 0.5) * 10.0e+3  # Random variation between -5.000m  and +5.000m
         # altitude_variation = (np.random.rand() - 0.5) * 20.0e+3  # Random variation between -10.000m and +10.000m
         # altitude_variation = 141  # add 141m that the rocket will fall within the approx. 6s of thrust
         # absolute initial position
@@ -236,8 +240,13 @@ if __name__ == "__main__":
                 logging.info(f".. STOPPING ..")
                 logging.info(f"Episode crash punishment: {ske.crash_punishment}")
                 loss = agent.update(state, action, reward, next_state, done, step_s)
+
+                # --- Save the FlightBuffer to a file ---
+                buffer_filename = os.path.join(buffer_folder, f"episode_{episode:04d}_flight_buffer.json")
+
                 ske.flight_replay_buffer.final_reward = ske.cumulative_rewards[-1]
                 if ske.flight_replay_buffer.final_reward > 0:
+                    ske.flight_replay_buffer.save(buffer_filename)
                     logging.info(f"Adding new flight to buffer "
                                  f"- size {len(multi_replay_buffer.flight_list)} "
                                  f"- reward: {ske.flight_replay_buffer.final_reward}")
@@ -260,10 +269,7 @@ if __name__ == "__main__":
         plt.show()
 
         # --- Save the PrettyTable to a file ---
-        output_folder = "episode_tables"
-        os.makedirs(output_folder, exist_ok=True)  # Create output folder if it doesn't exist
-
-        table_filename = os.path.join(output_folder, f"episode_{episode:04d}_table.txt")
+        table_filename = os.path.join(tables_folder, f"episode_{episode:04d}_table.txt")
         with open(table_filename, "w", encoding="utf-8") as f:
             f.write(str(results_table))  # Write the table string to the file
 

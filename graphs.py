@@ -134,8 +134,8 @@ def plot_episode_data(
     ax_radial_pos.plot(time, [(x[0] - offset_pos) * scale_pos for x in position], "b-",
                        label=f"Radial Position (m) x {scale_pos}")
     ax_radial_pos.set_ylabel("Radial")
-    ax_radial_pos.set_ylim(65000, 85000)  # Set y-axis limits for radial position
-    ax_radial_pos.set_yticks([_ for _ in range(65000, 90000, 5000)])  # Set y-axis ticks
+    ax_radial_pos.set_ylim(60000, 90000)  # Set y-axis limits for radial position
+    ax_radial_pos.set_yticks([_ for _ in range(60000, 95000, 5000)])  # Set y-axis ticks
     ax_radial_pos.grid(axis='y')
     ax_radial_pos.minorticks_on()
     ax_radial_pos.legend()

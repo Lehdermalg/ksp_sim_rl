@@ -2,11 +2,13 @@ import numpy as np
 import tensorflow as tf
 import logging
 import keras
+import json
 from keras import layers, regularizers, optimizers, callbacks, losses, metrics
 from copy import deepcopy
 
 THROTTLE_ACTIONS = np.array([-20, -10, -5, -2, -1, 0, 1, 2, 5, 10, 20])
 ANGLE_ACTIONS = np.array([-5, -2, -1, 0, 1, 2, 5])
+buffer_folder = "replay_buffers"
 
 
 class FlightReplayBuffer:
@@ -27,6 +29,24 @@ class FlightReplayBuffer:
 
     def reset(self):
         self.buffer = []
+
+    def save(self, filename):
+        """Saves the replay buffer to a JSON file."""
+        data = {
+            'max_size': self.max_size,
+            'total_reward': self.final_reward,
+            'experiences': [(s, a, r, ns, d) for s, a, r, ns, d in self.buffer]
+        }
+        with open(filename, 'w') as f:
+            json.dump(data, f)
+
+    def load(self, filename):
+        """Loads the replay buffer from a JSON file."""
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        self.max_size = data['max_size']
+        self.final_reward = data['total_reward']
+        self.buffer = [(s, a, r, ns, d) for s, a, r, ns, d in data['experiences']]
 
 
 class MultiReplayBuffer:
@@ -94,11 +114,11 @@ class QLearningAgentANN(object):
         # self.q_network = self._build_q_network(64, 0.01, 0.2, 64, 0.01, 0.2)
         # self.q_network = self._build_q_network(64,0.05,0.2, 64, 0.05, 0.2)
         self.q_network = self._build_q_network(network_dict={
-            'dense_1': {'n': 64, 'a': 'relu', 'r': 0.01},
+            'dense_1': {'n': 256, 'a': 'relu', 'r': 0.01},
             'dropout_1': {'d': 0.2},
-            'dense_2': {'n': 32, 'a': 'relu', 'r': 0.01},
+            'dense_2': {'n': 256, 'a': 'relu', 'r': 0.01},
             'dropout_2': {'d': 0.2},
-            'dense_3': {'n': 64, 'a': 'relu', 'r': 0.01},
+            'dense_3': {'n': 256, 'a': 'relu', 'r': 0.01},
             'dropout_3': {'d': 0.2},
         })
         # self.q_network = self._build_q_network(128,0.01,0.2, 128, 0.01, 0.2)
@@ -196,7 +216,6 @@ class QLearningAgentANN(object):
 
         return target_q_values
 
-
     def update(self, state, action, reward, next_state, done, step):
         """Updates the Q-network using a gradient descent step."""
         from environment import OBSERVATION_NAMES
@@ -268,14 +287,18 @@ class QLearningAgentANNDouble(object):
 
         # Build the neural network (you can customize the architecture)
         self.q_network_t = self._build_q_network(
-            neurons_1=64, regularization_1=0.01, dropout_1=0.2,
-            neurons_2=64, regularization_2=0.01, dropout_2=0.2,
-            neurons_3=64, regularization_3=0.01, dropout_3=0.2,
+            network_dict={
+                'dense_1': {'n': 64, 'a': 'relu', 'r': 0.01}, 'dropout_1': {'d': 0.2},
+                'dense_2': {'n': 32, 'a': 'relu', 'r': 0.01}, 'dropout_2': {'d': 0.2},
+                'dense_3': {'n': 64, 'a': 'relu', 'r': 0.01}, 'dropout_3': {'d': 0.2},
+            },
             output_actions=THROTTLE_ACTIONS)
         self.q_network_a = self._build_q_network(
-            neurons_1=64, regularization_1=0.01, dropout_1=0.2,
-            neurons_2=64, regularization_2=0.01, dropout_2=0.2,
-            neurons_3=64, regularization_3=0.01, dropout_3=0.2,
+            network_dict={
+                'dense_1': {'n': 64, 'a': 'relu', 'r': 0.01}, 'dropout_1': {'d': 0.2},
+                'dense_2': {'n': 32, 'a': 'relu', 'r': 0.01}, 'dropout_2': {'d': 0.2},
+                'dense_3': {'n': 64, 'a': 'relu', 'r': 0.01}, 'dropout_3': {'d': 0.2},
+            },
             output_actions=ANGLE_ACTIONS)
         # self.q_network = self._build_q_network(64,0.05,0.2, 64, 0.05, 0.2)
         # self.q_network = self._build_q_network(128,0.01,0.2, 64, 0.01, 0.2)
@@ -286,50 +309,29 @@ class QLearningAgentANNDouble(object):
         self.optimizer_t = optimizers.Adam(learning_rate=self.learning_rate)
         self.optimizer_a = optimizers.Adam(learning_rate=self.learning_rate)
 
+        self.loss_t = losses.categorical_crossentropy
+        self.loss_a = losses.categorical_crossentropy
+        self.metric_t = metrics.categorical_accuracy
+        self.metric_a = metrics.categorical_accuracy
+
+        self.q_network_t.compile(optimizer=self.optimizer_t, loss=self.loss_t, metrics=[self.metric_t])
+        self.q_network_a.compile(optimizer=self.optimizer_a, loss=self.loss_a, metrics=[self.metric_a])
+
         self.q_network_t.predict(np.zeros((1,) + self.env.observation_space.shape))
         self.q_network_a.predict(np.zeros((1,) + self.env.observation_space.shape))
 
     def _build_q_network(
             self,
             output_actions,
-            neurons_1, regularization_1, dropout_1 = None,
-            neurons_2 = None, regularization_2 = None, dropout_2 = None,
-            neurons_3 = None, regularization_3 = None, dropout_3 = None,
-            neurons_4 = None, regularization_4 = None, dropout_4 = None,
+            **network_dict
         ):
         """Creates the neural network for Q-value approximation."""
-        layer_list = [
-            layers.Input(shape=self.env.observation_space.shape),
-            layers.Dense(neurons_1, activation='relu', kernel_regularizer=regularizers.l2(regularization_1))
-        ]
-        if dropout_1 is not None:
-            layer_list.append(
-                layers.Dropout(dropout_1))
+        layers_list = [layers.Input(shape=self.env.observation_space.shape)]
+        layers_list = self._create_layers_from_dict(network_dict, layers_list)
 
-        if neurons_2 is not None:
-            layer_list.append(
-                layers.Dense(neurons_2, activation='relu', kernel_regularizer=regularizers.l2(regularization_2)))
-        if dropout_2 is not None:
-            layer_list.append(
-                layers.Dropout(dropout_2))
+        layers_list.append(layers.Dense(len(output_actions), activation='linear'))
 
-        if neurons_3 is not None:
-            layer_list.append(
-                layers.Dense(neurons_3, activation='relu', kernel_regularizer=regularizers.l2(regularization_3)))
-        if dropout_3 is not None:
-            layer_list.append(
-                layers.Dropout(dropout_3))
-
-        if neurons_4 is not None:
-            layer_list.append(
-                layers.Dense(neurons_4, activation='relu', kernel_regularizer=regularizers.l2(regularization_4)))
-        if dropout_4 is not None:
-            layer_list.append(
-                layers.Dropout(dropout_4))
-
-        layer_list.append(layers.Dense(len(output_actions), activation='linear'))
-
-        model = keras.Sequential(layer_list)
+        model = keras.Sequential(layers_list)
         if output_actions is THROTTLE_ACTIONS:
             logging.info(f"Action space shape: {self.env.action_space_t}")
         if output_actions is ANGLE_ACTIONS:
@@ -356,7 +358,7 @@ class QLearningAgentANNDouble(object):
         # print(f"Throttle delta, thrust angle delta: {throttle_delta}, {thrust_angle_delta}")
         return [throttle_delta, thrust_angle_delta]
 
-    def update(self, state, action, reward, next_state, done, step):
+    def old_update(self, state, action, reward, next_state, done, step):
         """Updates the Q-network using a gradient descent step."""
         from environment import OBSERVATION_NAMES
 
@@ -443,3 +445,127 @@ class QLearningAgentANNDouble(object):
                 tf.summary.scalar(f'Importance_{observation_name}', normalized_importance_a[i], step=step)
 
         return loss, loss_t, loss_a
+
+    def update(self, state, action, reward, next_state, done, step):
+        """Updates the Q-network using a gradient descent step."""
+        from environment import OBSERVATION_NAMES
+
+        target_q_values_t, target_q_values_a = self._calculate_target_q_value(state, action, reward, next_state, done)
+
+        # Prepare data for training
+        x = state[np.newaxis, :]  # Input state
+        t = target_q_values_t[np.newaxis, :]  # Target Q-values
+        a = target_q_values_a[np.newaxis, :]  # Target Q-values
+
+        # Perform a training step using model.fit (enables callbacks)
+        history_t = self.q_network_t.fit(x, t, epochs=1, verbose=0)  # Single epoch, no output
+        history_a = self.q_network_a.fit(x, a, epochs=1, verbose=0)  # Single epoch, no output
+
+        # Access loss from the history object
+        loss_t = history_t.history['loss'][0]
+        loss_a = history_a.history['loss'][0]
+
+        # Epsilon decay
+        self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
+
+        # --- Get weights from the first Dense layer ---
+        first_dense_layer_t = self.q_network_t.layers[0]
+        first_dense_layer_a = self.q_network_a.layers[0]
+        # print(f"weights: {first_dense_layer.get_weights()}")
+        weights_t = first_dense_layer_t.get_weights()[0]
+        weights_a = first_dense_layer_a.get_weights()[0]
+
+        # --- Calculate normalized sum of squared weights for each observation ---
+        squared_weights_t = np.square(weights_t)
+        squared_weights_a = np.square(weights_a)
+        sum_squared_weights_t = np.sum(squared_weights_t, axis=1)  # Sum along neuron axis
+        sum_squared_weights_a = np.sum(squared_weights_a, axis=1)  # Sum along neuron axis
+        normalized_importance_t = sum_squared_weights_t / len(weights_t)  # Normalize
+        normalized_importance_a = sum_squared_weights_a / len(weights_a)  # Normalize
+
+        # --- Log normalized importance ---
+        with self.writer.as_default():
+            tf.summary.histogram('Observation Importance T', normalized_importance_t, step=step)
+            tf.summary.histogram('Observation Importance A', normalized_importance_a, step=step)
+            for i, observation_name in enumerate(OBSERVATION_NAMES):
+                tf.summary.scalar(f'T_Importance_{observation_name}', normalized_importance_t[i], step=step)
+                tf.summary.scalar(f'A_Importance_{observation_name}', normalized_importance_a[i], step=step)
+
+        return loss_t, loss_a
+
+    def action_to_index(self, action: list):
+        """Converts an action (list) to an action index (list)."""
+        throttle_idx = np.where(THROTTLE_ACTIONS * self.env.dt == action[0])[0][0]
+        angle_idx = np.where(ANGLE_ACTIONS * self.env.dt == action[1])[0][0]
+        action_index = throttle_idx, angle_idx
+        return action_index
+
+    def _calculate_target_q_value(self, state, action, reward, next_state, done):
+        # Get Q-values for the current state
+        q_values_t = self.q_network_t.predict(state[np.newaxis, :])[0]
+        q_values_a = self.q_network_a.predict(state[np.newaxis, :])[0]
+
+        # Calculate the target Q-value
+        if done and next_state.size == 0:
+            target_t = reward
+            target_a = reward
+        else:
+            next_q_values_t = self.q_network_t.predict(next_state[np.newaxis, :])[0]
+            next_q_values_a = self.q_network_a.predict(next_state[np.newaxis, :])[0]
+            best_next_action_t = np.argmax(next_q_values_t)
+            best_next_action_a = np.argmax(next_q_values_a)
+            target_t = reward + self.gamma * next_q_values_t[best_next_action_t]
+            target_a = reward + self.gamma * next_q_values_a[best_next_action_a]
+
+        # Update the Q-value for the chosen action
+        action_index = self.action_to_index(action)
+        target_q_values_t = q_values_t.copy()  # Create a copy to modify
+        target_q_values_a = q_values_a.copy()  # Create a copy to modify
+        target_q_values_t[action_index[0]] = target_t
+        target_q_values_a[action_index[1]] = target_a
+
+        return target_q_values_t, target_q_values_a
+
+    def prepare_q_values_for_post_episode_fitting(self, batch):
+        # Calculate target Q-values for each state-action pair in the batch
+        target_q_values_t = []
+        target_q_values_a = []
+        for state, action, reward, next_state, done in batch:
+            target_q_values_t_for_state, target_q_values_a_for_state = self._calculate_target_q_value(
+                state, action, reward, next_state, done)
+            target_q_values_t.append(target_q_values_t_for_state)
+            target_q_values_a.append(target_q_values_a_for_state)
+
+        t = np.array(target_q_values_t)  # Target Q-values (2D array)
+        a = np.array(target_q_values_a)  # Target Q-values (2D array)
+
+        return t, a
+
+    @staticmethod
+    def _create_layers_from_dict(layer_dict, keras_layers):
+        """
+        Iterates through a dictionary defining neural network layers and creates corresponding Keras layer objects.
+
+        Args:
+            layer_dict: A dictionary where keys represent layer names and values are dictionaries containing layer parameters.
+
+        Returns:
+            A list of Keras layer objects.
+        """
+        for layer_name, layer_params in layer_dict.items():
+            if 'dense' in layer_name:  # Dense layer
+                units = layer_params['n']
+                activation = layer_params['a']
+                regularizer = None
+                if 'r' in layer_params:
+                    regularizer = regularizers.l2(layer_params['r'])
+
+                dense_layer = layers.Dense(units, activation=activation, kernel_regularizer=regularizer)
+                keras_layers.append(dense_layer)
+
+            if 'dropout' in layer_params:  # Dropout layer
+                rate = layer_params['d']
+                dropout_layer = layers.Dropout(rate)
+                keras_layers.append(dropout_layer)
+
+        return keras_layers

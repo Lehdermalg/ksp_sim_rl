@@ -6,14 +6,15 @@ from datetime import datetime
 import numpy as np
 
 from environment import SimpleKSPEnv
-from agents import QLearningAgentANNDouble
+from agents import QLearningAgentANNDouble, MultiReplayBuffer
 from tables import reset_table, add_row
 from graphs import visualize_rocket_flight, plot_episode_data, graphs_folder
 from maths import normalize, rotate_vector_by_angle
 
 current_folder = os.path.dirname(os.path.realpath(__file__))
 checkpoint_dir = "training/checkpoints"  # File name
-checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+checkpoint_prefix_t = os.path.join(checkpoint_dir, "ckpt_t")
+checkpoint_prefix_a = os.path.join(checkpoint_dir, "ckpt_a")
 checkpoint_path = os.path.join(current_folder, os.path.dirname(checkpoint_dir))
 
 log_dir = "training/logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -28,10 +29,11 @@ if __name__ == "__main__":
     # Create the environment
     _t = 2000       # simulation time limit [s]
     _ht = 75.0e+3   # desired orbital altitude
+    _h0 = 65.0e+3   # starting altitude
     # _position_angle = np.random.rand() * 360.0
     _position_angle = np.random.rand() * 5.0
     # initial altitude - relative to planet surface
-    _h0_rel = rotate_vector_by_angle(np.array([0.0e+0, 75.0e+3]), _position_angle)
+    _h0_rel = rotate_vector_by_angle(np.array([0.0e+0, _h0]), _position_angle)
     _v = 0.1        # at 60% of orbital velocity the ship needs approx 6s thrust to get to 100%
     _hard_coded_policy_test = False
 
@@ -100,8 +102,13 @@ if __name__ == "__main__":
     restart_episode_number = 0
     num_episodes = 30
     epsilon_restart = 3
+    flights_recorded = 3
+    flight_seconds_replayed = 10
     final_episode_number = num_episodes + restart_episode_number
     episode_rewards = []
+
+    # Create a replay buffer
+    multi_replay_buffer = MultiReplayBuffer(max_size=flights_recorded)  # Adjust max_size as needed
 
     action = np.array([0.0, 0.0])
 
@@ -111,10 +118,12 @@ if __name__ == "__main__":
             agent.epsilon = _epsilon_start
 
         # --- Randomize the initial altitude ---
-        altitude_variation = (np.random.rand() - 0.5) * 0.5e+3  # Random variation between -0.250m and +0.250m
+        # altitude_variation = (np.random.rand() - 0.5) * 0.5e+3  # Random variation between -0.250m and +0.250m
         # altitude_variation = (np.random.rand() - 0.5) * 1.0e+3  # Random variation between -0.500m and +0.500m
         # altitude_variation = (np.random.rand() - 0.5) * 2.0e+3  # Random variation between -1.000m and +1.000m
-        # altitude_variation = (np.random.rand() - 0.5) * 12.5e+3  # Random variation between -12.500m and +12.500m
+        altitude_variation = (np.random.rand() - 0.5) * 5.0e+3   # Random variation between -2.500m  and +2.500m
+        # altitude_variation = (np.random.rand() - 0.5) * 10.0e+3  # Random variation between -5.000m  and +5.000m
+        # altitude_variation = (np.random.rand() - 0.5) * 20.0e+3  # Random variation between -10.000m and +10.000m
         # altitude_variation = 141  # add 141m that the rocket will fall within the approx. 6s of thrust
         # absolute initial position
         # _position_angle = np.random.rand() * 360.0
@@ -153,9 +162,12 @@ if __name__ == "__main__":
             next_state, reward, done, info = ske.step(action)
             if not _hard_coded_policy_test:
                 if round(ske.t, 3) % 1 == 0:
-                    loss, loss_t, loss_a = agent.update(state, action, reward, next_state, done, step_s)
+                    loss_t, loss_a = agent.update(state, action, reward, next_state, done, step_s)
 
             state = next_state
+
+            # Store experience in the replay buffer
+            ske.flight_replay_buffer.add((state, action, reward, next_state, done))
 
             # logging.info(f"Step: {step_s} Loss: {loss} Action: {action}")
             # logging.info(f"Action: {action}\nState: {state}")
@@ -165,14 +177,15 @@ if __name__ == "__main__":
                 if round(ske.t, 3) % 1 == 0:
                     with writer.as_default():
                         tf.summary.scalar('Episode Reward', ske.episode_rewards[-1], step=step_s)
-                        tf.summary.scalar('Loss', loss.numpy(), step=step_s)  # Assuming you have a 'loss' variable
-                        tf.summary.scalar('Loss T', loss_t.numpy(), step=step_s)  # Assuming you have a 'loss' variable
-                        tf.summary.scalar('Loss A', loss_a.numpy(), step=step_s)  # Assuming you have a 'loss' variable
+                        tf.summary.scalar('Episode Cumulative Reward', ske.cumulative_rewards[-1], step=step_s)
+                        # tf.summary.scalar('Loss', loss.numpy(), step=step_s)  # Assuming you have a 'loss' variable
+                        tf.summary.scalar('Loss T', loss_t, step=step_s)  # Assuming you have a 'loss' variable
+                        tf.summary.scalar('Loss A', loss_a, step=step_s)  # Assuming you have a 'loss' variable
                         tf.summary.scalar('Epsilon', agent.epsilon, step=step_s)
                         tf.summary.scalar('Throttle', action[0], step=step_s)
                         tf.summary.scalar('Thrust Angle', action[1], step=step_s)
-                        tf.summary.histogram('Q-Values Throttle', agent.q_values_t[:, 0], step=step_s)  # Log Q-values
-                        tf.summary.histogram('Q-Values Angle', agent.q_values_a[:, 0], step=step_s)  # Log Q-values
+                        # tf.summary.histogram('Q-Values Throttle', agent.q_values_t[:, 0], step=step_s)  # Log Q-values
+                        # tf.summary.histogram('Q-Values Angle', agent.q_values_a[:, 0], step=step_s)  # Log Q-values
 
             if round(ske.t, 3) % 1 == 0:
 
@@ -201,6 +214,8 @@ if __name__ == "__main__":
                     # f"LOSS: {ske.loss} "
                     f"velocity R [m/s]: {ske.ship.velocity_r_fi_mps[0]:8.1f} "
                     f"velocity φ [m/s]: {ske.ship.velocity_r_fi_mps[1]:8.1f} "
+                    f"loss T: {round(loss_t, 3)} "
+                    f"loss A: {round(loss_a, 3)} "
                 )
                 # Be kind to your final tables
                 add_row(results_table, ske)
@@ -237,7 +252,13 @@ if __name__ == "__main__":
             if done:
                 logging.info(f".. STOPPING ..")
                 logging.info(f"Episode crash punishment: {ske.crash_punishment}")
-                loss = agent.update(state, action, reward, next_state, done, step_s)
+                loss_t, loss_a = agent.update(state, action, reward, next_state, done, step_s)
+                ske.flight_replay_buffer.final_reward = ske.cumulative_rewards[-1]
+                if ske.flight_replay_buffer.final_reward > 0:
+                    logging.info(f"Adding new flight to buffer "
+                                 f"- size {len(multi_replay_buffer.flight_list)} "
+                                 f"- reward: {ske.flight_replay_buffer.final_reward}")
+                    multi_replay_buffer.add(ske.flight_replay_buffer)
                 break
 
         # --- Generate and save the plot ---
@@ -267,6 +288,20 @@ if __name__ == "__main__":
         total_reward = sum(ske.episode_rewards)
         episode_rewards.append(total_reward)
         logging.info(f'Episode #{episode} reward: {total_reward}')
+
+        # Sample a batch from the multi-flight replay buffer
+        batch = multi_replay_buffer.sample(batch_size=int(flight_seconds_replayed/ske.dt))
+        if len(batch) > 0:
+            states, actions, rewards, next_states, dones = zip(*batch)
+
+            # Prepare data for training
+            X = np.array(states)
+            # Convert actions to indices (assuming you have a way to map actions to indices)
+            t, a = agent.prepare_q_values_for_post_episode_fitting(batch)
+
+            # Perform a batch update using model.fit
+            agent.q_network_t.fit(X, t, epochs=1, verbose=0)  # Single epoch, no output
+            agent.q_network_a.fit(X, a, epochs=1, verbose=0)  # Single epoch, no output
 
         save_path_t = checkpoint_manager_t.save()
         save_path_a = checkpoint_manager_a.save()
