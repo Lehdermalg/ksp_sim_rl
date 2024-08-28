@@ -6,7 +6,7 @@ from datetime import datetime
 import numpy as np
 
 from environment import SimpleKSPEnv
-from agents import QLearningAgentANN, buffer_folder
+from agents import QLearningAgentANN, buffer_folder, experience_folder
 from tables import reset_table, add_row, tables_folder
 from graphs import visualize_rocket_flight, plot_episode_data, graphs_folder
 from maths import normalize, rotate_vector_by_angle
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     episode_rewards = []
 
     # --- Pre-train the Agent ---
-    agent.load_experience_from_folder(replay_folder=buffer_folder)
+    agent.load_experience_from_folder(replay_folder=experience_folder)
     agent.train_on_experience(large_epochs=large_epochs, small_epochs=small_epochs, batch_size=batch_size)
 
     # --- Define a starting blank action ---

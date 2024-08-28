@@ -9,6 +9,7 @@ from copy import deepcopy
 THROTTLE_ACTIONS = np.array([-20, -10, -5, -2, -1, 0, 1, 2, 5, 10, 20])
 ANGLE_ACTIONS = np.array([-5, -2, -1, 0, 1, 2, 5])
 buffer_folder = "replay_buffers"
+experience_folder = "experience_buffers"
 
 
 class FlightReplayBuffer:
