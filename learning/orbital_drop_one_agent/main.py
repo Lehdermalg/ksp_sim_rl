@@ -29,7 +29,7 @@ if __name__ == "__main__":
         'epsilon_lo': 0.01e+0,
         'epsilon_hi': 0.66e+0,
         'epsilon_decay': 1.0-1e-2,
-        'flights_recorded': 0,
+        'flights_recorded': 5,
         'flight_steps_recorded': 100/env_params['step_size_s'],  # seconds * steps/s
         # TODO: needs improving to just use seconds
     }

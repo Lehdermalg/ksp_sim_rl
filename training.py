@@ -317,7 +317,7 @@ class RocketLearningSession:
                     markersize=1,
                     # label='Rocket Trajectory'
                     )
-            plt.show()
+            # plt.show()
 
         # --- Save the PrettyTable to a file ---
         table_filename = os.path.join(self.tables_folder, f"episode_{episode_num:04d}_table.txt")
