@@ -27,7 +27,7 @@ if __name__ == "__main__":
         'learning_rate': 1.0e-3,
         'gamma': 1.0 - 1.0e-2,
         'epsilon_lo': 0.01e+0,
-        'epsilon_hi': 0.33e+0,
+        'epsilon_hi': 0.66e+0,
         'epsilon_decay': 1.0-1e-2,
         'flights_recorded': 0,
         'flight_steps_recorded': 100/env_params['step_size_s'],  # seconds * steps/s
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     }
     training_params = {
         'restart_episode_number': 0,
-        'num_training_episodes': 20,
+        'num_training_episodes': 50,
         'num_verification_episodes': 5,  # Add this for verification runs
         'epsilon_restart': 10,
         'flights_recorded': 10,
@@ -45,7 +45,7 @@ if __name__ == "__main__":
         'scale': 1e+3,
         'folder': path.dirname(path.realpath(__file__)),
         'checkpoint_folder': '001',
-        'load_checkpoint': False,
+        'load_checkpoint': True,
         # Will be done only for training runs
         'train_on_old_experience': True,
         'train_on_new_experience': True,
