@@ -24,9 +24,20 @@ class FlightReplayBuffer:
         if len(self.buffer) > self.max_size:
             self.buffer.pop(0)  # Remove oldest experience
 
-    def sample(self, batch_size):
-        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
-        return [self.buffer[i] for i in indices]
+    def sample(self, batch_size: int, n_th: int = 100):
+        """"""
+        assert isinstance(n_th, int), f'n_th must be an integer. {n_th}'
+        assert n_th > 0, f'n_th must be larger than 0. {n_th}'
+
+        # print(f"Buffer size: {len(self.buffer)//n_th}. Batch_size: {batch_size}")
+        # print(f"min: {min(len(self.buffer)//n_th, batch_size)}")
+        indices = np.random.choice(
+            len(self.buffer)//n_th,
+            min(len(self.buffer)//n_th, batch_size),
+            replace=False
+        )
+        _sub_buffer = self.buffer[::n_th]
+        return [_sub_buffer[i] for i in indices]
 
     def reset(self):
         self.buffer = []
@@ -71,10 +82,19 @@ class MultiReplayBuffer:
             logging.info(f"Removing lowest reward flight from buffer - reward: {self.flight_list[index].final_reward}")
             self.flight_list.pop(index)  # Remove worst experience
 
-    def sample(self, batch_size):
+    def sample(self, batch_size, n_th: int = 100):
+        assert isinstance(n_th, int), f'n_th must be an integer. {n_th}'
+        assert n_th > 0, f'n_th must be larger than 0. {n_th}'
+
         _experience_list = []
         for f in self.flight_list:
-            _experience_list += f.sample(batch_size)
+            # print(f"Batch size: {batch_size}. Buffer size: {len(f.buffer)}. Nth: {n_th}")
+            _experience_list += f.sample(
+                min(batch_size, len(f.buffer)),
+                n_th=n_th
+            )
+
+        logging.info(f"Prepared an experience sample of {len(_experience_list)} length using every {n_th} point.")
         return _experience_list
 
 
@@ -92,28 +112,27 @@ class CustomCallback(callbacks.Callback):
 
 
 class QLearningAgentANN(object):
+    epsilon_restart = None
+    small_epochs = 1
+
     def __init__(
             self,
             env,
             writer,
-            learning_rate=0.001,
-            gamma=0.99,
-            epsilon=1.0,
-            epsilon_decay=0.995,
-            min_epsilon=0.01,
-            flights_recorded=5,
-            flight_steps_recorded=int(1.0e+4),
+            **agent_params
     ):
         self.env = env
         self.writer = writer
-        self.learning_rate = learning_rate
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.epsilon_decay = epsilon_decay
-        self.min_epsilon = min_epsilon
+
+        self.learning_rate = agent_params['learning_rate']
+        self.gamma = agent_params['gamma']
+        self.epsilon = agent_params['epsilon_hi']
+        self.max_epsilon = agent_params['epsilon_hi']
+        self.min_epsilon = agent_params['epsilon_lo']
+        self.epsilon_decay = agent_params['epsilon_decay']
+        self.flights_recorded = agent_params['flights_recorded']
+        self.flight_steps_recorded = agent_params['flight_steps_recorded']
         self.q_values = None
-        self.flights_recorded = flights_recorded
-        self.flight_steps_recorded = flight_steps_recorded
 
         # Create a SINGLE FLIGHT replay buffer
         self.flight_replay_buffer = FlightReplayBuffer(max_size=self.flight_steps_recorded)  # Adjust max_size as needed
@@ -131,8 +150,10 @@ class QLearningAgentANN(object):
             'dropout_3': {'d': 0.2},
         })
         self.optimizer = optimizers.Adam(learning_rate=self.learning_rate)
-        self.loss = losses.categorical_crossentropy
-        self.metric = metrics.categorical_accuracy
+        # self.loss = losses.categorical_crossentropy
+        # self.metric = metrics.categorical_accuracy
+        self.loss = losses.sparse_categorical_crossentropy
+        self.metric = metrics.sparse_categorical_accuracy
 
         self.q_network.compile(optimizer=self.optimizer, loss=self.loss, metrics=[self.metric])
 
@@ -178,7 +199,8 @@ class QLearningAgentANN(object):
         """Creates the neural network for Q-value approximation."""
         layers_list = [layers.Input(shape=self.env.observation_space.shape)]
         layers_list = self._create_layers_from_dict(network_dict, layers_list)
-        layers_list.append(layers.Dense(len(THROTTLE_ACTIONS) * len(ANGLE_ACTIONS), activation='linear'))
+        # layers_list.append(layers.Dense(len(THROTTLE_ACTIONS) * len(ANGLE_ACTIONS), activation='linear'))
+        layers_list.append(layers.Dense(len(THROTTLE_ACTIONS) * len(ANGLE_ACTIONS), activation='softmax'))
         model = keras.Sequential(layers_list)
         logging.info(f"Action space shape: {self.env.action_space}")
         return model
@@ -189,6 +211,8 @@ class QLearningAgentANN(object):
             # Randomly choose throttle and angle actions
             throttle_idx = np.random.choice(len(THROTTLE_ACTIONS))
             angle_idx = np.random.choice(len(ANGLE_ACTIONS))
+            logging.info(f"Choosing random: {throttle_idx}, {angle_idx} == "
+                         f"{THROTTLE_ACTIONS[throttle_idx]}, {ANGLE_ACTIONS[angle_idx]}")
         else:
             # Get Q-values from the network
             self.q_values = self.q_network.predict(state[np.newaxis, :])[0]
@@ -225,17 +249,27 @@ class QLearningAgentANN(object):
         return target_q_values
 
     def update(self, state, action, reward, next_state, done, step):
-        """Updates the Q-network using a gradient descent step."""
+        """Updates the Q-network using sparse categorical cross-entropy loss and Keras training."""
         from environment import OBSERVATION_NAMES
 
-        target_q_values = self._calculate_target_q_value(state, action, reward, next_state, done)
+        # Convert action to an index
+        action_index = self.action_to_index(action)
+
+        # TODO: The target q-value is not used ....
+        # Calculate the target Q-value
+        if done and next_state.size == 0:  # Terminal state
+            target = reward
+        else:
+            next_q_values = self.q_network.predict(next_state[np.newaxis, :])[0]
+            best_next_action = np.argmax(next_q_values)
+            target = reward + self.gamma * next_q_values[best_next_action]
 
         # Prepare data for training
         x = state[np.newaxis, :]  # Input state
-        y = target_q_values[np.newaxis, :]  # Target Q-values
+        y = np.array([action_index])  # Target action index (1D array)
 
         # Perform a training step using model.fit (enables callbacks)
-        history = self.q_network.fit(x, y, epochs=1, verbose=0)  # Single epoch, no output
+        history = self.q_network.fit(x, y, epochs=self.small_epochs, verbose=1)
 
         # Access loss from the history object
         loss = history.history['loss'][0]
@@ -261,6 +295,54 @@ class QLearningAgentANN(object):
 
         return loss
 
+    def old_update(self, state, action, reward, next_state, done, step):
+        """Updates the Q-network using a gradient descent step."""
+        from environment import OBSERVATION_NAMES
+
+        target_q_values = self._calculate_target_q_value(state, action, reward, next_state, done)
+
+        # Prepare data for training
+        x = state[np.newaxis, :]  # Input state
+        y = target_q_values[np.newaxis, :]  # Target Q-values
+
+        # Perform a training step using model.fit (enables callbacks)
+        history = self.q_network.fit(x, y, epochs=self.small_epochs, verbose=1)
+
+        # Access loss from the history object
+        loss = history.history['loss'][0]
+
+        # Epsilon decay
+        self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
+
+        # --- Get weights from the first Dense layer ---
+        first_dense_layer = self.q_network.layers[0]
+        # print(f"weights: {first_dense_layer.get_weights()}")
+        weights = first_dense_layer.get_weights()[0]
+
+        # --- Calculate normalized sum of squared weights for each observation ---
+        squared_weights = np.square(weights)
+        sum_squared_weights = np.sum(squared_weights, axis=1)  # Sum along neuron axis
+        normalized_importance = sum_squared_weights / len(weights)  # Normalize
+
+        # --- Log normalized importance ---
+        with self.writer.as_default():
+            tf.summary.histogram('Observation Importance', normalized_importance, step=step)
+            for i, observation_name in enumerate(OBSERVATION_NAMES):
+                tf.summary.scalar(f'Importance_{observation_name}', normalized_importance[i], step=step)
+
+        return loss
+
+    def prepare_target_action_indices(self, batch):
+        # Calculate target action indices for each state-action pair in the batch
+        target_action_indices = []
+        for state, action, reward, next_state, done in batch:
+            target_q_values_for_state = self._calculate_target_q_value(state, action, reward, next_state, done)
+            best_action_index = np.argmax(target_q_values_for_state)  # Get the index of the best action
+            target_action_indices.append(best_action_index)
+
+        y = np.array(target_action_indices)  # Target action indices (1D array)
+        return y
+
     def prepare_q_values_for_post_episode_fitting(self, batch):
         # Calculate target Q-values for each state-action pair in the batch
         target_q_values = []
@@ -284,6 +366,7 @@ class QLearningAgentANN(object):
 
     def load_experience_from_folder(self, replay_folder):
         import glob, os
+        logging.info(f"Loading experience from folder: {replay_folder}")
         # --- Load Experience Replay Files from a Folder ---
         replay_filenames = glob.glob(os.path.join(replay_folder, "*.json"))  # Get all JSON files in the folder
         if len(replay_filenames) > self.multi_replay_buffer.max_size:
@@ -301,6 +384,11 @@ class QLearningAgentANN(object):
             small_epochs: how many times the agent will get trained on a single batch sample
             batch_size: how many samples to take from each batch
         """
+        logging.info(f"Training on experience: "
+                     f"{large_epochs} x "
+                     f"{small_epochs} x "
+                     f"{batch_size} x "
+                     f"{len(self.multi_replay_buffer.flight_list)}")
         for epoch in range(large_epochs):
             batch = self.multi_replay_buffer.sample(batch_size)
             logging.info(f"Epoch {epoch + 1}/{large_epochs}")
@@ -308,10 +396,11 @@ class QLearningAgentANN(object):
                 states, actions, rewards, next_states, dones = zip(*batch)
 
                 x = np.array(states)
-                y = self.prepare_q_values_for_post_episode_fitting(batch)
+                # y = self.prepare_q_values_for_post_episode_fitting(batch)
+                y = self.prepare_target_action_indices(batch)
 
                 # Train for one epoch
-                history = self.q_network.fit(x, y, epochs=small_epochs, verbose=0)
+                history = self.q_network.fit(x, y, epochs=small_epochs, verbose=1)
 
                 # Log loss (if needed)
                 loss = history.history['loss'][0]

@@ -16,7 +16,8 @@ def visualize_rocket_flight(
         episode: int,
         environment: SimpleKSPEnv,
         trajectory_x_y: list,
-        scale: float = 1000.0
+        scale: float = 1000.0,
+        folder: str = graphs_folder
 ):
     """Simulates a rocket drop and visualizes the trajectory.
 
@@ -25,6 +26,7 @@ def visualize_rocket_flight(
         environment: The SimpleKSPEnv environment.
         scale: defaults to km scale
         trajectory_x_y: rocket flight trajectory coordinates.
+        folder: where to store images. Defaults to graphs_folder.
     """
     from matplotlib.patches import Circle, Annulus
 
@@ -92,7 +94,7 @@ def visualize_rocket_flight(
     plt.draw()
 
     # Save the image (overwrites previous image with the same name)
-    image_trajectory_filename = os.path.join(graphs_folder, f"episode_trajectory_{episode:04d}.png")
+    image_trajectory_filename = os.path.join(folder, f"episode_trajectory_{episode:04d}.png")
     plt.savefig(image_trajectory_filename)
 
     return fig, ax
@@ -105,7 +107,9 @@ def plot_episode_data(
         velocity: list,
         acceleration: list,
         step_rewards: list,
-        throttle_angle: list):
+        throttle_angle: list,
+        folder: str = graphs_folder
+):
     """Plots key rocket parameters over an episode.
 
         episode: the episode number.
@@ -115,6 +119,7 @@ def plot_episode_data(
         acceleration: numpy array with the acceleration data [m/s²] (r, fi)
         step_rewards: numpy array with the rewards
         throttle_angle: list with the throttle angle
+        folder: where to store images. Defaults to graphs_folder.
     """
 
     offset_pos = 600e+3  # m
@@ -211,6 +216,6 @@ def plot_episode_data(
     ax_throttle.legend()
 
     # Save the image
-    image_filename = os.path.join(graphs_folder, f"episode_data_{episode:04d}.png")
+    image_filename = os.path.join(folder, f"episode_data_{episode:04d}.png")
     plt.savefig(image_filename)
     plt.close(fig)  # Close to release resources

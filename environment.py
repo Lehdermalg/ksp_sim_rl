@@ -1,3 +1,6 @@
+import math
+import logging
+
 import gym
 import gym.spaces as spaces
 import numpy as np
@@ -38,12 +41,10 @@ class SimpleKSPEnv(gym.Env):
     t = 0
     dt = 0.0
     done = False
-    episode_rewards = 0.0
     _ship, _planet = None, None  # To be used for resetting
     ship, planet = None, None  # To be used for calculations
     dec = 6
     wid = 9
-    _alt_max = 90.0e+3         # Altitude limiting the trajectory for 0-1 scaling
     _fi_max = 360               # Angle limiting the trajectory for 0-1 scaling
     _v_max = 4.0e+3             # Velocity limiting the trajectory for 0-1 scaling
     _a_max = 5e+1               # Acceleration limiting the trajectory for 0-1 scaling
@@ -52,16 +53,24 @@ class SimpleKSPEnv(gym.Env):
     def __init__(
             self,
             going_to_orbit=True,
-            dt: float = 1.0e-2,  # time step size in seconds
-            # total_time_s: int = 10,  # time cutoff in seconds - for trial runs
-            total_time_s: int = 4000,  # time cutoff in seconds
             planet: Planet = Planets.Kerbin.value,
             ship: Rocket = Rockets.triple_boar_408t.value,
+            **env_params
     ):
         super(SimpleKSPEnv, self).__init__()
         self.going_to_orbit = going_to_orbit
-        self.total_time_s = total_time_s
-        self.dt = dt
+        self.total_time_s = env_params['total_time_s']
+        self.dt = env_params['step_size_s']
+        self.target_altitude_m = env_params['target_altitude_m']
+        self.target_velocity_mps = planet.orbital_velocity_mps(self.target_altitude_m)
+        self.start_altitude_m_lo = env_params['start_altitude_m_lo']
+        self.start_altitude_m_hi = env_params['start_altitude_m_hi']
+        self.start_angle_deg_lo = env_params['start_angle_deg_lo']
+        self.start_angle_deg_hi = env_params['start_angle_deg_hi']
+        self.start_velocity_percent_orbital_lo = env_params['start_velocity_percent_orbital_lo']
+        self.start_velocity_percent_orbital_hi = env_params['start_velocity_percent_orbital_hi']
+        self._alt_min = env_params['altitude_cutoff_lo']
+        self._alt_max = env_params['altitude_cutoff_hi']
         # Store info for resetting
         self._planet = planet
         self._ship = ship
@@ -138,6 +147,35 @@ class SimpleKSPEnv(gym.Env):
             dtype=np.float32
         )
 
+    def randomize_position(self):
+        from maths import rotate_vector_by_angle, normalize
+        logging.info(f"Randomizing position")
+        _position_angle = (self.start_angle_deg_lo + np.random.rand() *
+                           (self.start_angle_deg_hi-self.start_angle_deg_lo))
+        _position_altitude = (self.start_altitude_m_lo + np.random.rand() *
+                              (self.start_altitude_m_hi-self.start_altitude_m_lo))
+        _h0_relative = rotate_vector_by_angle(np.array([0.0e+0, _position_altitude]), _position_angle)
+
+        # altitude_variation = 141  # add 141m that the rocket will fall within the approx. 6s of thrust
+
+        initial_position_m = (np.linalg.norm(_h0_relative) + self.planet.radius_m) * normalize(_h0_relative)
+        self.set_initial_position_m(initial_position_m)
+
+    def randomize_velocity(self):
+        from maths import rotate_vector_by_angle, normalize
+        logging.info(f"Randomizing velocity")
+        _orbital_velocity_mps = self.planet.orbital_velocity_mps(self.ship.target_alt_m)
+        _velocity_mps = _orbital_velocity_mps * (
+                self.start_velocity_percent_orbital_lo + np.random.rand() *
+                (self.start_velocity_percent_orbital_hi-self.start_velocity_percent_orbital_lo)
+        )
+        _position_versor = normalize(self.ship.position_m)
+        initial_velocity_mps = _velocity_mps * rotate_vector_by_angle(
+            _position_versor, self.ship.position_r_fi_m[1] + 90.0
+        )
+
+        self.set_initial_velocity_mps(initial_velocity_mps)
+
     def set_target_altitude_m(self, altitude: float):
         """Sets the target altitude for the ship and the 'safe' copy"""
         if altitude <= 0.0:
@@ -157,29 +195,32 @@ class SimpleKSPEnv(gym.Env):
         """Sets the initial position for the ship and the 'safe' copy"""
         self._ship.position_m = position
         self.ship.position_m = position
-        print(f"Ship t0 position = {self.ship.position_m}")
+        # print(f"Ship t0 position = {self.ship.position_m}")
 
     def set_initial_velocity_mps(self, velocity: np.array):
         """Sets the initial velocity for the ship and the 'safe' copy"""
         self._ship.velocity_mps = velocity
         self.ship.velocity_mps = velocity
-        print(f"Ship t0 velocity = {self.ship.velocity_mps}")
+        # print(f"Ship t0 velocity = {self.ship.velocity_mps}")
 
     def reset(
             self,
-            position_m: np.array = np.array([0.0, 0.0]),
-            velocity_mps: np.array = np.array([0.0, 0.0]),
-            acceleration_mps2: np.array = np.array([0.0, 0.0])
+            start_position_m: np.array = np.array([0.0, 0.0]),
+            start_velocity_mps: np.array = np.array([0.0, 0.0]),
+            start_acceleration_mps2: np.array = np.array([0.0, 0.0])
     ):
+        logging.info(f"Resetting the environment")
         # Retrieve planet and ship from 'safe storage'
         # self.planet = deepcopy(self._planet)
         self.planet = self._planet  # There really shouldn't be anything happening to the planet...
         self.ship = deepcopy(self._ship)
         # Reset the necessary ship parameters
         # TODO: add some exploration of the initial position space
-        self.ship.position_m = position_m
-        self.ship.velocity_mps = velocity_mps
-        self.ship.acceleration_mps2 = acceleration_mps2
+        self.ship.position_m = start_position_m
+        self.ship.velocity_mps = start_velocity_mps
+        self.ship.acceleration_mps2 = start_acceleration_mps2
+        self.ship.target_alt_m = self.target_altitude_m
+        self.ship.target_velocity_mps = self.target_velocity_mps
         self.ship.initial_dV_mps = self.ship.dv_remaining_mps(self.planet)
         self.ship.calculate_properties(self.planet)
         print(f"Ship t0 altitude: {self.ship.current_alt_m}")
@@ -187,14 +228,8 @@ class SimpleKSPEnv(gym.Env):
         # Initialize/reset other environment state variables
         self.t = 0
         self.done = False
-        self.episode_rewards = []
-        self.cumulative_rewards = []
-        # ...
 
-        # Return the initial observation
-        return self._get_observation()
-
-    def _get_observation(self) -> np.array:
+    def get_observation(self) -> np.array:
         acc_d_mps2 = (-np.sign(self.ship.norm_velocity_mps) *
                       self.ship.current_experienced_air_drag_mps2)
 
@@ -250,19 +285,18 @@ class SimpleKSPEnv(gym.Env):
 
         # Simulate one time step:
         self.ship.make_force_iteration(dt=self.dt, planet=self.planet)
+        if (self.ship.current_alt_m < self._alt_min or
+                self.ship.current_alt_m > self._alt_max):
+            self.ship.crash()
+
         self.t += round(self.dt, self.dec)
         # print(f"DEBUG: Calling step... t = {round(self.t, self.dec)}")
 
         # Get observation after taking the step
-        observation = self._get_observation()
+        observation = self.get_observation()
 
         # Calculate reward:
         reward = self._calculate_reward()
-        self.episode_rewards.append(reward)
-        if len(self.episode_rewards) == 1:
-            self.cumulative_rewards.append(reward)
-        else:
-            self.cumulative_rewards.append(self.cumulative_rewards[-1] + reward)
 
         # Check if the episode is done:
         self.done = self._is_done()
@@ -281,51 +315,30 @@ class SimpleKSPEnv(gym.Env):
 
         # weights for the rewards' importance
         # alt_rew_w = 3.0e-3
-        alt_rew_w = 1.0e+2
+        # alt_rew_w = 1.0e+2
+        alt_rew_w = 1.0e+3
         # vel_rew_w = 1.0e-3
         vel_rew_w = 1.0e+2
         # fuel_rew_w = 5.0e-5
         fuel_rew_w = 0.0
-        # time_reward = 1.0e-5
-        # time_reward = 1.0e-1
-        time_reward = 0.0
+        time_reward = 1.0e-2
 
         altitude_reward = alt_rew_w * rayleigh_heaviside_pdf(
             x=self.ship.current_alt_m,
             offset=self.planet.altitude_cutoff_m,
             sigma=5e+3)
-        # print(f"altitude and reward: "
-        #       f"{round(self.ship.current_alt_m, self.dec):{self.wid}.{self.dec}f}\t"
-        #       f"{round(altitude_reward, self.dec):{self.wid}.{self.dec}f}")
+
         velocity_reward = vel_rew_w * gaussian(
             value=self.ship.velocity_r_fi_mps[1],
             target_value=self.ship.target_velocity_mps,
             std_dev=0.05 * self.ship.target_velocity_mps)
+
         _total_fuel_percentage = self.ship.total_fuel_mass_kg / self.ship.initial_fuel_mass_kg
         fuel_reward = fuel_rew_w * pow(self.ship.total_fuel_mass_kg / self.ship.initial_fuel_mass_kg, 2)
-        # print(f"fuel     and reward: "
-        #       f"{round(_total_fuel_percentage, self.dec):{self.wid}.{self.dec}f}\t"
-        #       f"{round(fuel_reward, self.dec):{self.wid}.{self.dec}f}")
 
         self.step_reward += altitude_reward + velocity_reward + fuel_reward + time_reward
 
-        # crashing is really hyper ultra super bad
-        # crash_punishment = round(-2.5e+5, self.dec)
-        # crash_punishment = round(-2.0e+6, self.dec)  # 200 steps * 1000 reward
-        # crash_punishment = round(-2.0e+6, self.dec)  # 200s * 100 steps/s * 1000 reward * 1/10
-        # crash_punishment = penalty_function(self.last_epoch_mean_rewards)
-        if self.ship.crashed:
-            if self.crash_punishment is None:
-                self.crash_punishment = -0.9 * self.cumulative_rewards[-1]
-            self.step_reward += self.crash_punishment
-            # adapt the punishment for a new run
-            self.crash_punishment = -1.1 * self.cumulative_rewards[-1]
-
-            # pass
-        # print(f"time     and reward: "
-        #       f"{round(self.t, self.dec):{self.wid}.{self.dec}f}\t"
-        #       f"{round(self.step_reward, self.dec):{self.wid}.{self.dec}f}")
-
+        assert not math.isnan(self.step_reward), f"not-a-number reward detected!"
         return self.step_reward
 
     def _is_done(self):

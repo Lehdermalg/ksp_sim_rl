@@ -39,7 +39,7 @@ def reset_table():
     return results
 
 
-def add_row(table, environment):
+def add_row(table, environment, episode_cumulative_reward):
     # apo- and periapsis
     environment.ship.calculate_ra_rp(planet=environment.planet)
     environment.ship.calculate_position_r_fi_m(planet=environment.planet)
@@ -48,7 +48,7 @@ def add_row(table, environment):
 
     table.add_row([
         environment.t,
-        environment.step_reward, sum(environment.episode_rewards),
+        environment.step_reward, episode_cumulative_reward,
         environment.ship.position_r_fi_m[0], environment.ship.position_r_fi_m[1],
         environment.ship.position_m[0], environment.ship.position_m[1],
         environment.ship.norm_velocity_mps,

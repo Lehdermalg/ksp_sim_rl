@@ -536,13 +536,6 @@ class Rocket(object):
         # Update planet-relative ship parameters
         self.calculate_properties(planet=planet)
 
-        # detect and handle the KABLAMSKI
-        # if self.current_alt_m < 0.0e+3 or self.current_alt_m > 150.0e+3:
-        # HIGH ALTITUDE TRAINING
-        if (self.current_alt_m < self.target_alt_m - 15.0e+3 or
-                self.current_alt_m > self.target_alt_m + 15.0e+3):
-            self.crash()  # The ship be close to ideal orbit to learn the angular component
-
         # UPDATING
         #  fuel amount to produce thrust
         self.consume_fuel(dt=dt)
