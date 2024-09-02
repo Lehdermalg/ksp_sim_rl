@@ -8,6 +8,9 @@ from copy import deepcopy
 
 THROTTLE_ACTIONS = np.array([-20, -10, -5, -2, -1, 0, 1, 2, 5, 10, 20])
 ANGLE_ACTIONS = np.array([-5, -2, -1, 0, 1, 2, 5])
+T, A = np.meshgrid(THROTTLE_ACTIONS, ANGLE_ACTIONS)
+ALL_ACTIONS = list(zip(T.flatten(), A.flatten()))
+
 buffer_folder = "replay_buffers"
 experience_folder = "experience_buffers"
 
@@ -114,6 +117,7 @@ class CustomCallback(callbacks.Callback):
 class QLearningAgentANN(object):
     epsilon_restart = None
     small_epochs = 1
+    _layers = []
 
     def __init__(
             self,
@@ -142,13 +146,14 @@ class QLearningAgentANN(object):
 
         # Build the neural network (you can customize the architecture)
         self.q_network = self._build_q_network(network_dict={
-            'dense_1': {'n': 256, 'a': 'relu', 'r': 0.01},
+            'dense_1': {'n': 64, 'a': 'relu', 'r': 0.01},
             'dropout_1': {'d': 0.2},
-            'dense_2': {'n': 256, 'a': 'relu', 'r': 0.01},
+            'dense_2': {'n': 32, 'a': 'relu', 'r': 0.01},
             'dropout_2': {'d': 0.2},
-            'dense_3': {'n': 256, 'a': 'relu', 'r': 0.01},
+            'dense_3': {'n': 64, 'a': 'relu', 'r': 0.01},
             'dropout_3': {'d': 0.2},
         })
+
         self.optimizer = optimizers.Adam(learning_rate=self.learning_rate)
         # self.loss = losses.categorical_crossentropy
         # self.metric = metrics.categorical_accuracy
@@ -156,6 +161,10 @@ class QLearningAgentANN(object):
         self.metric = metrics.sparse_categorical_accuracy
 
         self.q_network.compile(optimizer=self.optimizer, loss=self.loss, metrics=[self.metric])
+
+        # show me what you've got...
+        self.q_network.summary()
+        # keras.utils.plot_model(self.q_network, to_file='model.png', show_shapes=True)
 
         self.q_network.predict(np.zeros((1,) + self.env.observation_space.shape))
 
@@ -166,8 +175,7 @@ class QLearningAgentANN(object):
         action_index = throttle_idx * len(ANGLE_ACTIONS) + angle_idx
         return action_index
 
-    @staticmethod
-    def _create_layers_from_dict(layer_dict, keras_layers):
+    def _create_layers_from_dict(self, layer_dict):
         """
         Iterates through a dictionary defining neural network layers and creates corresponding Keras layer objects.
 
@@ -177,8 +185,12 @@ class QLearningAgentANN(object):
         Returns:
             A list of Keras layer objects.
         """
+        self._layers = [layers.Input(shape=self.env.observation_space.shape)]
+
         for layer_name, layer_params in layer_dict.items():
+            # print(f"Browsing layer dict item: {layer_name}, {layer_params}")
             if 'dense' in layer_name:  # Dense layer
+                # print(f"Building dense layer")
                 units = layer_params['n']
                 activation = layer_params['a']
                 regularizer = None
@@ -186,22 +198,23 @@ class QLearningAgentANN(object):
                     regularizer = regularizers.l2(layer_params['r'])
 
                 dense_layer = layers.Dense(units, activation=activation, kernel_regularizer=regularizer)
-                keras_layers.append(dense_layer)
+                self._layers.append(dense_layer)
 
-            if 'dropout' in layer_params:  # Dropout layer
+            if 'dropout' in layer_name:  # Dropout layer
+                # print(f"Building dropout layer")
                 rate = layer_params['d']
                 dropout_layer = layers.Dropout(rate)
-                keras_layers.append(dropout_layer)
+                self._layers.append(dropout_layer)
 
-        return keras_layers
-
-    def _build_q_network(self, **network_dict):
+    def _build_q_network(self, network_dict: dict):
         """Creates the neural network for Q-value approximation."""
-        layers_list = [layers.Input(shape=self.env.observation_space.shape)]
-        layers_list = self._create_layers_from_dict(network_dict, layers_list)
+        self._create_layers_from_dict(network_dict)
+        # print(f"Layers: {self._layers}")
         # layers_list.append(layers.Dense(len(THROTTLE_ACTIONS) * len(ANGLE_ACTIONS), activation='linear'))
-        layers_list.append(layers.Dense(len(THROTTLE_ACTIONS) * len(ANGLE_ACTIONS), activation='softmax'))
-        model = keras.Sequential(layers_list)
+        self._layers.append(layers.Dense(len(THROTTLE_ACTIONS) * len(ANGLE_ACTIONS), activation='softmax'))
+        # print(f"Layers: {self._layers}")
+        model = keras.Sequential(self._layers)
+        # print(f"Model: {model}")
         logging.info(f"Action space shape: {self.env.action_space}")
         return model
 
@@ -264,6 +277,10 @@ class QLearningAgentANN(object):
             best_next_action = np.argmax(next_q_values)
             target = reward + self.gamma * next_q_values[best_next_action]
 
+            with self.writer.as_default():
+                tf.summary.histogram('Q-Values', next_q_values, step=step)
+                tf.summary.scalar("Action predicted", best_next_action, step=step)
+
         # Prepare data for training
         x = state[np.newaxis, :]  # Input state
         y = np.array([action_index])  # Target action index (1D array)
@@ -281,17 +298,26 @@ class QLearningAgentANN(object):
         first_dense_layer = self.q_network.layers[0]
         # print(f"weights: {first_dense_layer.get_weights()}")
         weights = first_dense_layer.get_weights()[0]
+        weights_l = self.q_network.layers[-1].get_weights()[0]
 
         # --- Calculate normalized sum of squared weights for each observation ---
         squared_weights = np.square(weights)
         sum_squared_weights = np.sum(squared_weights, axis=1)  # Sum along neuron axis
         normalized_importance = sum_squared_weights / len(weights)  # Normalize
 
+        # --- Calculate normalized sum of squared weights for each observation ---
+        squared_weights_l = np.square(weights_l)
+        sum_squared_weights_l = np.sum(squared_weights_l, axis=0)  # Sum along neuron axis
+        normalized_importance_l = sum_squared_weights_l / len(weights_l)  # Normalize
+
         # --- Log normalized importance ---
         with self.writer.as_default():
             tf.summary.histogram('Observation Importance', normalized_importance, step=step)
+            tf.summary.histogram('Action Importance', normalized_importance_l, step=step)
             for i, observation_name in enumerate(OBSERVATION_NAMES):
                 tf.summary.scalar(f'Importance_{observation_name}', normalized_importance[i], step=step)
+            for i, action in enumerate(ALL_ACTIONS):
+                tf.summary.scalar(f'Importance_T{action[0]}A{action[1]}', normalized_importance_l[i], step=step)
 
         return loss
 

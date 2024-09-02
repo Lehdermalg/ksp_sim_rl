@@ -1,5 +1,6 @@
 import logging
 from os import path
+
 from training import RocketLearningSession
 
 # --- Main Script ---
@@ -24,12 +25,12 @@ if __name__ == "__main__":
     }
     agent_params = {
         'learning_rate': 1.0e-3,
-        'gamma': 1.0 - 5e-5,
+        'gamma': 1.0 - 1.0e-2,
         'epsilon_lo': 0.01e+0,
         'epsilon_hi': 0.33e+0,
         'epsilon_decay': 1.0-1e-2,
         'flights_recorded': 0,
-        'flight_steps_recorded': 100/env_params['step_size_s']  # seconds * steps/s
+        'flight_steps_recorded': 100/env_params['step_size_s'],  # seconds * steps/s
         # TODO: needs improving to just use seconds
     }
     training_params = {
@@ -46,10 +47,11 @@ if __name__ == "__main__":
         'checkpoint_folder': '001',
         'load_checkpoint': False,
         # Will be done only for training runs
-        'train_on_old_experience': False,
-        'train_on_new_experience': False,
+        'train_on_old_experience': True,
+        'train_on_new_experience': True,
         'training_run': True,
         'verification_run': False,
+        'crash_penalty': -1.0e+4
     }
 
     # Configure logging

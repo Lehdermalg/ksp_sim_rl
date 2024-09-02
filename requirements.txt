@@ -6,3 +6,4 @@ prettytable
 matplotlib
 google
 scipy
+pydot

@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from planet import Planets, Planet
 from rocket import Rockets, Rocket
-from agents import THROTTLE_ACTIONS, ANGLE_ACTIONS, FlightReplayBuffer
+from agents import THROTTLE_ACTIONS, ANGLE_ACTIONS
 
 OBSERVATION_NAMES = [
     "radial position",
@@ -85,8 +85,6 @@ class SimpleKSPEnv(gym.Env):
         self.action_space_t = spaces.Discrete(self.n_throttle_actions)
         self.action_space_a = spaces.Discrete(self.n_angle_actions)
 
-        self._last_crash_punishment = None
-        self._current_crash_punishment = None
         self.crash_punishment = None
 
         # observation space should be the rocket and flight parameters ... I am a dumb fool :D :D :D

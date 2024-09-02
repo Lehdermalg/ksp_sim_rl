@@ -20,7 +20,6 @@ class RocketLearningSession:
     rocket_velocity_r_fi = []
     rocket_acceleration_r_fi = []
     rocket_throttle_fi = []
-    step_reward = []
     results_table = None
     episode_rewards = []
     episode_cumulative_rewards = []
@@ -57,7 +56,11 @@ class RocketLearningSession:
 
         self._setup_folders(self.training_params['folder'])
 
+        # Environment and eventual changes
         self.env = SimpleKSPEnv(**env_params)
+        self.env.crash_punishment = self.training_params['crash_penalty']
+
+        # Agent and eventual changes
         self.agent = QLearningAgentANN(
             env=self.env,
             writer=tf.summary.create_file_writer(self.log_folder),
@@ -227,19 +230,18 @@ class RocketLearningSession:
             logging.info(f"Final episode reward BEFORE crash punishment: {self.episode_cumulative_rewards[-1]}")
             logging.info(f"Episode crash punishment: {self.env.crash_punishment}")
             if self.env.ship.crashed:
-                if self.env.crash_punishment is None:
-                    self.env.crash_punishment = -0.99 * self.episode_cumulative_rewards[-1]
+                # if self.env.crash_punishment is None:
+                #     self.env.crash_punishment = -0.99 * self.episode_cumulative_rewards[-1]
                 # FIRST Prepare the crash penalty for a new run (cumulative rewards WITHOUT the crash penalty applied)
-                _new_crash_punishment = -1.01 * self.episode_cumulative_rewards[-1]
+                # _new_crash_punishment = -1.01 * self.episode_cumulative_rewards[-1]
 
                 # THEN Apply the crash penalty
-                self.step_reward += self.env.crash_punishment
                 self.episode_rewards[-1] += self.env.crash_punishment
                 self.episode_cumulative_rewards[-1] += self.env.crash_punishment
                 logging.info(f"Modifying crash punishment: {self.env.crash_punishment}")
 
                 # FINALLY Store the crash penalty
-                self.env.crash_punishment = _new_crash_punishment
+                # self.env.crash_punishment = _new_crash_punishment
 
             logging.info(f"Final episode reward AFTER crash punishment: {self.episode_cumulative_rewards[-1]}")
 
