@@ -229,11 +229,16 @@ class QLearningAgentANN(object):
         else:
             # Get Q-values from the network
             self.q_values = self.q_network.predict(state[np.newaxis, :])[0]
-            action_index = np.argmax(self.q_values)  # Directly get the index of the best action
+            # print(f"Q values: {self.q_values}")
+            action_index = np.argmax(self.q_values)
 
             # Convert action_index back to throttle and angle indices
             throttle_idx = action_index // len(ANGLE_ACTIONS)
             angle_idx = action_index % len(ANGLE_ACTIONS)
+            logging.info(f"Action index: {action_index}, "
+                         f"Value: {self.q_values[action_index]}, "
+                         f"Throttle: {THROTTLE_ACTIONS[throttle_idx]}, "
+                         f"Angle: {ANGLE_ACTIONS[angle_idx]}")
 
         # Retrieve the actual throttle and angle values from the arrays
         throttle_delta = THROTTLE_ACTIONS[throttle_idx] * self.env.dt
@@ -267,19 +272,6 @@ class QLearningAgentANN(object):
 
         # Convert action to an index
         action_index = self.action_to_index(action)
-
-        # TODO: The target q-value is not used ....
-        # Calculate the target Q-value
-        if done and next_state.size == 0:  # Terminal state
-            target = reward
-        else:
-            next_q_values = self.q_network.predict(next_state[np.newaxis, :])[0]
-            best_next_action = np.argmax(next_q_values)
-            target = reward + self.gamma * next_q_values[best_next_action]
-
-            with self.writer.as_default():
-                tf.summary.histogram('Q-Values', next_q_values, step=step)
-                tf.summary.scalar("Action predicted", best_next_action, step=step)
 
         # Prepare data for training
         x = state[np.newaxis, :]  # Input state

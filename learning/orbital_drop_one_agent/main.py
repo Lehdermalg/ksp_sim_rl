@@ -24,34 +24,34 @@ if __name__ == "__main__":
         # ... other environment parameters
     }
     agent_params = {
-        'learning_rate': 1.0e-3,
-        'gamma': 1.0 - 1.0e-2,
+        'learning_rate': 1.0e-2,
+        'gamma': 1.0 - 1.0e-3,
         'epsilon_lo': 0.01e+0,
-        'epsilon_hi': 0.66e+0,
-        'epsilon_decay': 1.0-1e-2,
+        'epsilon_hi': 0.33e+0,
+        'epsilon_decay': 1.0-5.0e-3,
         'flights_recorded': 5,
         'flight_steps_recorded': 100/env_params['step_size_s'],  # seconds * steps/s
         # TODO: needs improving to just use seconds
     }
     training_params = {
         'restart_episode_number': 0,
-        'num_training_episodes': 50,
+        'num_training_episodes': 100,
         'num_verification_episodes': 5,  # Add this for verification runs
         'epsilon_restart': 10,
         'flights_recorded': 10,
-        'flight_seconds_replayed': 10,
+        'flight_seconds_replayed': 50,
         'large_epochs': 2,
         'small_epochs': 16,
         'scale': 1e+3,
         'folder': path.dirname(path.realpath(__file__)),
-        'checkpoint_folder': '001',
+        'checkpoint_folder': '002',
         'load_checkpoint': True,
         # Will be done only for training runs
         'train_on_old_experience': True,
         'train_on_new_experience': True,
         'training_run': True,
         'verification_run': False,
-        'crash_penalty': -1.0e+4
+        'crash_penalty': -1.0e+5
     }
 
     # Configure logging
