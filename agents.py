@@ -146,11 +146,11 @@ class QLearningAgentANN(object):
 
         # Build the neural network (you can customize the architecture)
         self.q_network = self._build_q_network(network_dict={
-            'dense_1': {'n': 64, 'a': 'relu', 'r': 0.01},
+            'dense_1': {'n': 256, 'a': 'relu', 'r': 0.01},
             'dropout_1': {'d': 0.2},
-            'dense_2': {'n': 32, 'a': 'relu', 'r': 0.01},
+            'dense_2': {'n': 256, 'a': 'relu', 'r': 0.01},
             'dropout_2': {'d': 0.2},
-            'dense_3': {'n': 64, 'a': 'relu', 'r': 0.01},
+            'dense_3': {'n': 256, 'a': 'relu', 'r': 0.01},
             'dropout_3': {'d': 0.2},
         })
 

@@ -44,14 +44,14 @@ if __name__ == "__main__":
         'small_epochs': 16,
         'scale': 1e+3,
         'folder': path.dirname(path.realpath(__file__)),
-        'checkpoint_folder': '002',
+        'checkpoint_folder': '001--256-256-256',
         'load_checkpoint': True,
         # Will be done only for training runs
         'train_on_old_experience': True,
         'train_on_new_experience': True,
         'training_run': True,
         'verification_run': False,
-        'crash_penalty': -1.0e+5
+        'crash_penalty': -200.0e+3
     }
 
     # Configure logging
